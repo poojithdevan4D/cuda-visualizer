@@ -2,7 +2,7 @@
 
 An interactive, beginner-friendly tool for understanding how a GPU runs code under CUDA. It visualizes the execution hierarchy (grid, block, warp, thread), shows why memory access patterns matter, and lets you explore SM occupancy. Built as a single HTML file, no build step, no backend.
 
-**Live demo:**(https://github.com/poojithdevan4D/cuda-visualizer/deployments/github-pages)
+**Live demo:**https://poojithdevan4d.github.io/cuda-visualizer
 
 ## What it covers
 
