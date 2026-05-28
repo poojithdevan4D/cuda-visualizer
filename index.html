@@ -312,11 +312,11 @@ function makeLaneTidSprite(lane, tid, active){
   x.fillStyle = active ? '#ffffff' : '#666666';
   x.font='bold 64px sans-serif'; x.textAlign='center'; x.textBaseline='middle';
   x.fillText(String(lane), 80, 65);
-  // Small tid label
+  // Small global thread id label
   if(active && tid !== undefined){
     x.fillStyle = 'rgba(255,255,255,0.7)';
-    x.font='400 26px sans-serif';
-    x.fillText('tid '+tid, 80, 120);
+    x.font='400 22px sans-serif';
+    x.fillText('thread '+tid, 80, 122);
   } else if(!active){
     x.fillStyle = 'rgba(255,100,100,0.8)';
     x.font='400 22px sans-serif';
@@ -378,6 +378,8 @@ function buildBlockView(animate=false){
 function buildWarpView(animate=false){
   clearInstanced();if(!state.selectedBlock||state.selectedWarp==null)return;
   const wi=state.selectedWarp,tpb=threadsPerBlock(),start=wi*WARP_SIZE,real=Math.min(WARP_SIZE,tpb-start);
+  const sb=state.selectedBlock;
+  const linearBlockIdx = sb.z * state.grid.x * state.grid.y + sb.y * state.grid.x + sb.x;
   const cols=8,sp=1.2,oxC=(cols-1)/2,oyR=1.5;
   const geo=new THREE.BoxGeometry(0.85,0.85,0.85),mat=new THREE.MeshStandardMaterial({metalness:0.05,roughness:0.5});
   instancedMesh=new THREE.InstancedMesh(geo,mat,WARP_SIZE);
@@ -388,8 +390,15 @@ function buildWarpView(animate=false){
     const c=l%cols,r=Math.floor(l/cols),x=(c-oxC)*sp,y=-(r-oyR)*sp;
     dm.position.set(x,y,0);dm.scale.set(1,1,1);dm.updateMatrix();instancedMesh.setMatrixAt(l,dm.matrix);
     const active=l<real;if(active)col.setHex(hex);else col.copy(inact);instancedMesh.setColorAt(l,col);
-    let m={kind:'lane',warp:wi,lane:l,active};if(active){const tid=start+l;const cc=tidToCoords(tid);m.tid=tid;m.tx=cc.tx;m.ty=cc.ty;m.tz=cc.tz;}instanceMeta[l]=m;
-    const s=makeLaneTidSprite(l, active ? (start+l) : undefined, active);
+    let m={kind:'lane',warp:wi,lane:l,active};
+    if(active){
+      const localTid=start+l;
+      const gtid=linearBlockIdx*tpb+localTid;
+      const cc=tidToCoords(localTid);
+      m.tid=localTid; m.gtid=gtid; m.tx=cc.tx; m.ty=cc.ty; m.tz=cc.tz;
+    }
+    instanceMeta[l]=m;
+    const s=makeLaneTidSprite(l, active ? m.gtid : undefined, active);
     s.position.set(x,y,0.6); scene.add(s); labelSprites.push(s);
   }
   instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
@@ -544,7 +553,7 @@ function updateHierUI(){
   // Info card by view
   if(state.view==='grid')setInfo('The grid','Every cube here is a block of threads. The whole set is your grid, launched all at once. Blocks run independently and the GPU schedules them in any order. Click a block to look inside.','Think of the grid as the whole army and each block as a platoon.');
   else if(state.view==='block')setInfo('A block','Each small cube is one thread. Colours group them into warps of 32. Click a thread (or a warp on the right) to zoom into one warp.','A block is a platoon. Inside it, threads are split into squads of 32, called warps.');
-  else setInfo('A warp','Each cube is one lane (0–31) of this warp. The big number is the <strong>lane</strong>, its physical slot in the warp, so every warp has lanes 0–31. The smaller <strong>tid</strong> below is the actual thread inside the block that occupies that lane, which is unique. All 32 lanes run the same instruction at the same time. Press Play to watch.','A warp is a squad of 32 soldiers. The lane is the position in the squad (1st, 2nd, 3rd). The tid is the soldier in that position.');
+  else setInfo('A warp','Each cube is one lane (0–31) of this warp. The big number is the <strong>lane</strong>, its slot in the warp, so every warp has lanes 0–31. The smaller <strong>thread N</strong> below is the unique global thread id (computed as <code>blockIdx · blockDim + threadIdx</code>). It increases across blocks, so every thread in the whole grid has a different number. All 32 lanes run the same instruction at the same time. Press Play to watch.','Lane = position in the squad. Thread = the unique soldier in the whole army.');
 
   document.getElementById('btn-3d').classList.toggle('active',state.dimMode==='3d');
   document.getElementById('btn-2d').classList.toggle('active',state.dimMode==='2d');
@@ -568,8 +577,17 @@ function updateRightContent(){
     el.querySelectorAll('.warp-list-item').forEach(it=>it.addEventListener('click',()=>{state.selectedWarp=parseInt(it.dataset.warp,10);state.view='warp';rebuildHier(true);}));
   } else {
     const w=state.selectedWarp,tpb=threadsPerBlock(),s=w*WARP_SIZE,rc=Math.min(WARP_SIZE,tpb-s),inact=WARP_SIZE-rc;
+    const sb=state.selectedBlock;
+    const linearBlockIdx = sb.z * state.grid.x * state.grid.y + sb.y * state.grid.x + sb.x;
+    const gStart = linearBlockIdx * tpb + s;
+    const gEnd = gStart + rc - 1;
     const c=WARP_COLORS[w%WARP_COLORS.length].toString(16).padStart(6,'0');
-    el.innerHTML=`<h2>This warp</h2><div class="lane-info"><div class="row"><span class="k">threads</span><span class="v">${s} – ${s+rc-1}</span></div><div class="row"><span class="k">active lanes</span><span class="v">${rc} / 32</span></div><div class="row"><span class="k">idle lanes</span><span class="v" style="color:${inact>0?'#ff8a5a':'#fff'};">${inact}</span></div></div>
+    el.innerHTML=`<h2>This warp</h2><div class="lane-info">
+      <div class="row"><span class="k">global threads</span><span class="v" style="color:#4affb0;">${gStart} – ${gEnd}</span></div>
+      <div class="row"><span class="k">local tid (in block)</span><span class="v">${s} – ${s+rc-1}</span></div>
+      <div class="row"><span class="k">active lanes</span><span class="v">${rc} / 32</span></div>
+      <div class="row"><span class="k">idle lanes</span><span class="v" style="color:${inact>0?'#ff8a5a':'#fff'};">${inact}</span></div></div>
+      <div class="help-row" style="margin-top:8px;">The big number on each cube is the lane (0–31). The smaller "thread N" is the unique global thread id, so it's different for every block in the grid. Local tid stays the same range across blocks because it's relative to the block.</div>
       <h2>Try this</h2><div class="help-row" style="margin-top:0;">Press <strong>Play execution</strong> on the left. Watch all lanes flash together (lockstep), then watch them split for an if-statement (divergence), then rejoin.</div>`;
   }
 }
@@ -767,7 +785,7 @@ function onMove(ev){
           </div>`;
       }
     }
-    else if(m.kind==='lane'){if(m.active)tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="key">thread</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div>`;else tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="inactive">idle (no thread here)</span></div>`;}
+    else if(m.kind==='lane'){if(m.active)tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="key">global thread</span> <span class="val" style="color:#4affb0;">${m.gtid}</span></div><div><span class="key">local tid</span> <span class="val">${m.tid}</span></div><div><span class="key">threadIdx</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div>`;else tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="inactive">idle (no thread here)</span></div>`;}
     tooltip.style.left=(ev.clientX-r.left+14)+'px';tooltip.style.top=(ev.clientY-r.top+14)+'px';tooltip.style.display='block';
   } else tooltip.style.display='none';
 }
