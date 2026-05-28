@@ -341,11 +341,15 @@ function buildGridView(animate=false){
   const geo=new THREE.BoxGeometry(0.85,0.85,0.85),mat=new THREE.MeshStandardMaterial({metalness:0.1,roughness:0.55});
   instancedMesh=new THREE.InstancedMesh(geo,mat,count);
   instancedMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3);
-  const dm=new THREE.Object3D(),col=new THREE.Color(),base=new THREE.Color(0x4a9eff);
+  const dm=new THREE.Object3D(),col=new THREE.Color();
   const sp=1.2,ox=(gx-1)/2,oy=(gy-1)/2,oz=(gz-1)/2;let i=0;
+  const denom=Math.max(1,(gx-1)+(gy-1)+(gz-1));
   for(let z=0;z<gz;z++)for(let y=0;y<gy;y++)for(let x=0;x<gx;x++){
     dm.position.set((x-ox)*sp,(y-oy)*sp,state.dimMode==='2d'?0:(z-oz)*sp);dm.scale.set(1,1,1);dm.updateMatrix();instancedMesh.setMatrixAt(i,dm.matrix);
-    col.copy(base).multiplyScalar(0.65+0.35*((x+y+z)/Math.max(1,gx+gy+gz)));instancedMesh.setColorAt(i,col);
+    // Position-based HSL gradient: blue → teal/purple shift, with brightness variation
+    const norm=(x+y+z)/denom;
+    col.setHSL(0.55+norm*0.12, 0.72, 0.38+norm*0.28);
+    instancedMesh.setColorAt(i,col);
     instanceMeta[i]={kind:'block',bx:x,by:y,bz:z};i++;
   }
   instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
