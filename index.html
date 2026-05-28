@@ -9,6 +9,7 @@
 <meta property="og:title" content="CUDA Visualizer — Learn the GPU execution model visually" />
 <meta property="og:description" content="Interactive tool: grid, block, warp, thread, memory coalescing and occupancy, with a guided tour for beginners." />
 <meta property="og:type" content="website" />
+<meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%230b0c10'/%3E%3Cg transform='translate(120,140)'%3E%3Ctext x='0' y='0' fill='%23fff' font-family='-apple-system,sans-serif' font-size='62' font-weight='700'%3ECUDA Visualizer%3C/text%3E%3Ctext x='0' y='60' fill='%238a8d99' font-family='sans-serif' font-size='28'%3ELearn the GPU execution model, visually.%3C/text%3E%3Ctext x='0' y='130' fill='%234a9eff' font-family='monospace' font-size='22'%3Egrid %E2%86%92 block %E2%86%92 warp %E2%86%92 thread%3C/text%3E%3C/g%3E%3Cg transform='translate(700,180)'%3E%3Crect x='0' y='0' width='60' height='60' rx='6' fill='%234a9eff'/%3E%3Crect x='80' y='0' width='60' height='60' rx='6' fill='%23ffc14a'/%3E%3Crect x='160' y='0' width='60' height='60' rx='6' fill='%234affb0'/%3E%3Crect x='240' y='0' width='60' height='60' rx='6' fill='%23ff5a9e'/%3E%3Crect x='0' y='80' width='60' height='60' rx='6' fill='%23b85aff'/%3E%3Crect x='80' y='80' width='60' height='60' rx='6' fill='%234a9eff'/%3E%3Crect x='160' y='80' width='60' height='60' rx='6' fill='%23ffc14a'/%3E%3Crect x='240' y='80' width='60' height='60' rx='6' fill='%234affb0'/%3E%3C/g%3E%3C/svg%3E" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234a9eff'/%3E%3Crect x='6' y='6' width='8' height='8' rx='1.5' fill='%23fff'/%3E%3Crect x='18' y='6' width='8' height='8' rx='1.5' fill='%23bcdcff'/%3E%3Crect x='6' y='18' width='8' height='8' rx='1.5' fill='%23bcdcff'/%3E%3Crect x='18' y='18' width='8' height='8' rx='1.5' fill='%23fff'/%3E%3C/svg%3E" />
 <style>
@@ -32,8 +33,10 @@
   .app { display: grid; grid-template-columns: 300px 1fr 300px; height: calc(100vh - 52px); width: 100vw; }
   .sidebar { background: #0f1016; border-right: 1px solid #20222c; padding: 22px; overflow-y: auto; }
   .sidebar-right { border-right: none; border-left: 1px solid #20222c; }
-  .stage { position: relative; background: #07080c; overflow: auto; }
-  #canvas { display: block; }
+  .stage { position: relative; background: #07080c; overflow: hidden; }
+  #hier-stage { position: absolute; inset: 0; overflow: hidden; }
+  #mem-stage, #occ-stage, #practice-stage { position: absolute; inset: 0; }
+  #canvas { display: block; width: 100%; height: 100%; }
   h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; color: #fff; }
   .subtitle { font-size: 12.5px; color: #8a8d99; margin-bottom: 22px; line-height: 1.5; }
   h2 { font-size: 11px; font-weight: 700; color: #6a6d7a; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; margin-top: 24px; }
@@ -146,6 +149,7 @@
   <button class="tab" data-mode="occupancy"><span class="tab-num">3</span>Occupancy</button>
   <button class="tab" data-mode="practice"><span class="tab-num">?</span>Practice</button>
   <div style="margin-left:auto; display:flex; gap:8px;">
+    <button class="btn" id="glossary-btn" title="Definitions of key terms">📖 Glossary</button>
     <button class="btn" id="share-btn" title="Copy a link to this exact view">🔗 Share</button>
     <button class="btn" id="export-btn" title="Save the current view as a PNG image">⬇ Image</button>
     <button class="tour-btn" id="start-tour">▶ Guided Tour</button>
@@ -188,6 +192,35 @@
 
 <!-- Tour card -->
 <div class="tour-card hidden" id="tour-card"></div>
+
+<!-- Glossary modal -->
+<div class="modal-bg hidden" id="glossary">
+  <div class="modal" style="max-width:640px; text-align:left; max-height:80vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+      <h1 style="font-size:22px; margin:0;">Glossary</h1>
+      <button class="big-btn ghost" id="glossary-close" style="padding:6px 14px;">Close</button>
+    </div>
+    <div style="text-align:left; color:#c8cbd6; font-size:13.5px; line-height:1.65;">
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Thread</strong> — the smallest unit of work. One thread runs your kernel code once. A real CUDA launch has thousands of them. Analogy: one soldier.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Warp</strong> — a group of exactly 32 threads. The warp is the unit the hardware actually executes. All 32 threads in a warp run the same instruction at the same time (SIMT). Analogy: a squad of 32 who must move in lockstep.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Lane</strong> — a thread's position inside its warp, numbered 0 to 31. <code style="background:#181a22;padding:2px 5px;border-radius:3px;color:#7ec8ff;">lane = tid % 32</code>.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Block</strong> — a group of threads that can cooperate and share fast on-chip memory. A block can have up to 1024 threads, organised in 1D, 2D, or 3D. Analogy: a platoon.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Grid</strong> — the full set of blocks launched together. Blocks run independently and can be scheduled in any order. Analogy: the whole army.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">SIMT</strong> — Single Instruction, Multiple Threads. All 32 lanes in a warp issue the same instruction at the same instant. When code branches, lanes take different paths sequentially (see Warp Divergence).</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Warp Divergence</strong> — when threads in the same warp need to do different things (an if-statement), the warp splits and runs each path one after another. The warp is only as fast as the slowest path.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Memory Coalescing</strong> — when all 32 threads of a warp read data from the same small chunk of memory (a 128-byte segment), the GPU fetches it in one transaction. When the data is scattered across many chunks, it needs many transactions, and most of each is wasted.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">SM</strong> — Streaming Multiprocessor. One of the GPU's processing cores. A modern GPU has tens to hundreds of SMs. The runtime schedules blocks onto SMs.</p>
+      <p style="margin-bottom:14px;"><strong style="color:#fff;">Occupancy</strong> — the ratio of active warps on an SM to the maximum the SM supports. Higher occupancy helps the GPU hide memory latency by switching between warps.</p>
+      <p style="margin-bottom:0;"><strong style="color:#fff;">Kernel</strong> — a function that runs on the GPU, written in CUDA C++ and launched from host code with the <code style="background:#181a22;padding:2px 5px;border-radius:3px;color:#7ec8ff;">&lt;&lt;&lt;grid, block&gt;&gt;&gt;</code> syntax.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div id="app-footer" style="position:fixed; bottom:0; left:0; right:0; padding:6px 16px; font-size:10.5px; color:#5a5d6a; background:rgba(11,12,16,0.92); border-top:1px solid #181a22; z-index:50; display:flex; justify-content:space-between; align-items:center; pointer-events:none;">
+  <span style="pointer-events:auto;">CUDA Visualizer · MIT licensed · free to use, share, and fork</span>
+  <span style="pointer-events:auto;">Press <kbd style="background:#181a22; padding:1px 5px; border-radius:3px; border:1px solid #2a2d3a; font-family:monospace;">?</kbd> for keyboard shortcuts</span>
+</div>
 
 <script type="importmap">
 { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
@@ -245,13 +278,15 @@ let camTween=null;
 let playAnim=null;
 
 function resize(){
-  const stg=document.getElementById('hier-stage');
-  if(stg.classList.contains('hidden'))return;
+  const hier=document.getElementById('hier-stage');
+  if(hier.classList.contains('hidden'))return;
+  const stg=document.getElementById('stage');
   const w=stg.clientWidth,h=stg.clientHeight; if(!w||!h)return;
   renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   camera.aspect=w/h; camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);
+if(window.ResizeObserver){ new ResizeObserver(()=>resize()).observe(document.getElementById('stage')); }
 
 function threadsPerBlock(){return state.block.x*state.block.y*state.block.z;}
 function blocksPerGrid(){return state.grid.x*state.grid.y*state.grid.z;}
@@ -269,6 +304,28 @@ function makeTextSprite(text,color='#fff'){
   const x=c.getContext('2d');x.fillStyle=color;x.font='bold 56px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(text,64,64);
   const t=new THREE.CanvasTexture(c);t.minFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(0.7,0.7,1);return s;
+}
+function makeLaneTidSprite(lane, tid, active){
+  const c=document.createElement('canvas'); c.width=160; c.height=160;
+  const x=c.getContext('2d');
+  // Big lane number
+  x.fillStyle = active ? '#ffffff' : '#666666';
+  x.font='bold 64px sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText(String(lane), 80, 65);
+  // Small tid label
+  if(active && tid !== undefined){
+    x.fillStyle = 'rgba(255,255,255,0.7)';
+    x.font='400 26px sans-serif';
+    x.fillText('tid '+tid, 80, 120);
+  } else if(!active){
+    x.fillStyle = 'rgba(255,100,100,0.8)';
+    x.font='400 22px sans-serif';
+    x.fillText('idle', 80, 120);
+  }
+  const t=new THREE.CanvasTexture(c); t.minFilter=THREE.LinearFilter;
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));
+  s.scale.set(0.95, 0.95, 1);
+  return s;
 }
 function clearLabels(){labelSprites.forEach(s=>{scene.remove(s);s.material.map.dispose();s.material.dispose();});labelSprites=[];}
 function clearInstanced(){if(instancedMesh){scene.remove(instancedMesh);instancedMesh.geometry.dispose();instancedMesh.material.dispose();instancedMesh=null;}instanceMeta=[];clearLabels();}
@@ -293,7 +350,7 @@ function buildGridView(animate=false){
   }
   instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
   const span=Math.max(gx,gy,state.dimMode==='2d'?1:gz)*sp;
-  const tp=new THREE.Vector3(span*1.2,span*1.0,span*1.8);
+  const tp=new THREE.Vector3(span*1.05,span*0.85,span*1.5);
   if(animate)tweenCamera(tp,new THREE.Vector3(0,0,0)); else{camera.position.copy(tp);controls.target.set(0,0,0);controls.update();}
 }
 function buildBlockView(animate=false){
@@ -311,7 +368,7 @@ function buildBlockView(animate=false){
   }
   instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
   const span=Math.max(bx,by,state.dimMode==='2d'?1:bz)*sp;
-  const tp=new THREE.Vector3(span*1.3,span*1.0,span*1.8);
+  const tp=new THREE.Vector3(span*1.1,span*0.85,span*1.5);
   if(animate)tweenCamera(tp,new THREE.Vector3(0,0,0)); else{camera.position.copy(tp);controls.target.set(0,0,0);controls.update();}
 }
 function buildWarpView(animate=false){
@@ -328,7 +385,8 @@ function buildWarpView(animate=false){
     dm.position.set(x,y,0);dm.scale.set(1,1,1);dm.updateMatrix();instancedMesh.setMatrixAt(l,dm.matrix);
     const active=l<real;if(active)col.setHex(hex);else col.copy(inact);instancedMesh.setColorAt(l,col);
     let m={kind:'lane',warp:wi,lane:l,active};if(active){const tid=start+l;const cc=tidToCoords(tid);m.tid=tid;m.tx=cc.tx;m.ty=cc.ty;m.tz=cc.tz;}instanceMeta[l]=m;
-    const s=makeTextSprite(String(l),active?'#fff':'#666');s.position.set(x,y,0.6);s.scale.set(0.6,0.6,1);scene.add(s);labelSprites.push(s);
+    const s=makeLaneTidSprite(l, active ? (start+l) : undefined, active);
+    s.position.set(x,y,0.6); scene.add(s); labelSprites.push(s);
   }
   instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
   const tp=new THREE.Vector3(0,0,cols*sp*1.15);
@@ -404,6 +462,7 @@ function renderLeftSidebar(){
         <div class="input-cell"><label>X</label><input id="bx" type="number" min="1" max="1024" value="${state.block.x}"/></div>
         <div class="input-cell"><label>Y</label><input id="by" type="number" min="1" max="1024" value="${state.block.y}"/></div>
         <div class="input-cell"><label>Z</label><input id="bz" type="number" min="1" max="64" value="${state.block.z}"/></div></div>
+      <div class="help-row" style="margin-top:4px; color:#6a6d7a;">CUDA limit: max 1024 threads per block total (X·Y·Z ≤ 1024), Z ≤ 64.</div>
       <h2>The numbers</h2><div id="stats"></div>
       <div id="warp-note" class="note" style="display:none;"></div>`;
     wireHierInputs();
@@ -460,7 +519,11 @@ function updateHierUI(){
     <div class="stat"><span class="label">Total warps</span><span class="value">${fmt(tw)}</span></div>
     <div class="stat"><span class="label">Lanes used in last warp</span><span class="value ${waste>0?'warn':''}">${aL} / ${WARP_SIZE}</span></div>`;
   const note=document.getElementById('warp-note');
-  if(waste>0){note.style.display='block';note.innerHTML=`Your block has ${tpb} threads, which is not a multiple of 32. The last warp only uses ${aL} of its 32 lanes, so ${waste} lanes sit idle in every block. Pick a multiple of 32 (like ${Math.ceil(tpb/32)*32}) to waste nothing.`;}
+  const HARD_LIMIT=1024;
+  let warnings=[];
+  if(tpb>HARD_LIMIT){warnings.push(`Threads per block is ${tpb}, above the real hardware limit of ${HARD_LIMIT}. A real GPU would refuse to launch this kernel. Reduce block dims to stay valid.`);}
+  if(waste>0){warnings.push(`Your block has ${tpb} threads, which is not a multiple of 32. The last warp only uses ${aL} of its 32 lanes, so ${waste} lanes sit idle in every block. Pick a multiple of 32 (like ${Math.ceil(tpb/32)*32}) to waste nothing.`);}
+  if(warnings.length){note.style.display='block';note.style.borderLeftColor=tpb>HARD_LIMIT?'#ff5a5a':'#ffc14a';note.innerHTML=warnings.join('<br><br>');}
   else note.style.display='none';
   document.getElementById('code-launch').innerHTML=`<span class="cm">// launch the kernel</span>
 <span class="kw">dim3</span> grid(<span class="num">${state.grid.x}</span>, <span class="num">${state.grid.y}</span>, <span class="num">${state.grid.z}</span>);
@@ -477,7 +540,7 @@ function updateHierUI(){
   // Info card by view
   if(state.view==='grid')setInfo('The grid','Every cube here is a block of threads. The whole set is your grid, launched all at once. Blocks run independently and the GPU schedules them in any order. Click a block to look inside.','Think of the grid as the whole army and each block as a platoon.');
   else if(state.view==='block')setInfo('A block','Each small cube is one thread. Colours group them into warps of 32. Click a thread (or a warp on the right) to zoom into one warp.','A block is a platoon. Inside it, threads are split into squads of 32, called warps.');
-  else setInfo('A warp','All 32 lanes here are one warp. The hardware runs all of them at the same time, doing the same instruction. Press Play to watch it.','A warp is a squad of 32 soldiers who all do the exact same move at the same time.');
+  else setInfo('A warp','Each cube is one lane (0–31) of this warp. The big number is the <strong>lane</strong>, its physical slot in the warp, so every warp has lanes 0–31. The smaller <strong>tid</strong> below is the actual thread inside the block that occupies that lane, which is unique. All 32 lanes run the same instruction at the same time. Press Play to watch.','A warp is a squad of 32 soldiers. The lane is the position in the squad (1st, 2nd, 3rd). The tid is the soldier in that position.');
 
   document.getElementById('btn-3d').classList.toggle('active',state.dimMode==='3d');
   document.getElementById('btn-2d').classList.toggle('active',state.dimMode==='2d');
@@ -493,7 +556,11 @@ function updateRightContent(){
   else if(state.view==='block'){
     const wpb=warpsPerBlock(),tpb=threadsPerBlock();let items='';
     for(let w=0;w<wpb;w++){const c=WARP_COLORS[w%WARP_COLORS.length].toString(16).padStart(6,'0');const s=w*WARP_SIZE,e=Math.min(s+WARP_SIZE,tpb)-1,rc=Math.min(WARP_SIZE,tpb-s),p=rc<WARP_SIZE?` (${rc}/32)`:'';items+=`<div class="warp-list-item" data-warp="${w}"><div class="warp-list-color" style="background:#${c}"></div><div class="warp-list-label">Warp ${w}</div><div class="warp-list-meta">threads ${s}–${e}${p}</div></div>`;}
-    el.innerHTML=`<h2>Warps in this block</h2><div class="warp-list">${items}</div><div class="help-row">Click any warp to see its 32 lanes and play execution.</div>`;
+    el.innerHTML=`<h2>Thread index decoder</h2>
+      <div class="lane-info" id="decoder-panel" style="font-size:10.5px;">
+        <div style="color:#8a8d99;">Hover any thread to see its index math worked out with real numbers.</div>
+      </div>
+      <h2>Warps in this block</h2><div class="warp-list">${items}</div><div class="help-row">Click any warp to see its 32 lanes and play execution.</div>`;
     el.querySelectorAll('.warp-list-item').forEach(it=>it.addEventListener('click',()=>{state.selectedWarp=parseInt(it.dataset.warp,10);state.view='warp';rebuildHier(true);}));
   } else {
     const w=state.selectedWarp,tpb=threadsPerBlock(),s=w*WARP_SIZE,rc=Math.min(WARP_SIZE,tpb-s),inact=WARP_SIZE-rc;
@@ -510,17 +577,28 @@ function renderMemory(){
   const stage=document.getElementById('mem-stage');
   const accessed=[];let maxE=0;for(let l=0;l<WARP_SIZE;l++){const e=elemFor(l);accessed.push(e);maxE=Math.max(maxE,e);}
   const segs=segsTouched();const nSeg=Math.max(...[...segs])+1;const totalE=Math.max(WARP_SIZE,nSeg*ELEMS_PER_SEGMENT);
-  let tc='';for(let l=0;l<WARP_SIZE;l++)tc+=`<div class="cell thread" title="thread ${l} reads element ${accessed[l]}">${l}</div>`;
+  let tc='';for(let l=0;l<WARP_SIZE;l++)tc+=`<div class="cell thread" id="tcell-${l}" title="thread ${l} reads element ${accessed[l]}">${l}</div>`;
   const touched=new Set(accessed);let mc='';
-  for(let e=0;e<totalE;e++){const seg=Math.floor(e/ELEMS_PER_SEGMENT);mc+=`<div class="cell mem ${touched.has(e)?'touched':''} ${segs.has(seg)?'seg-active':''}" title="element ${e}, chunk ${seg}">${e}</div>`;}
-  let bands='';for(let s=0;s<nSeg;s++){const a=segs.has(s);bands+=`<div style="display:inline-block;width:${ELEMS_PER_SEGMENT*30}px;margin-right:3px;"><div class="seg-band" style="background:${a?'#ffc14a':'#222530'};"></div><div style="font-size:9px;color:${a?'#ffc14a':'#5a5d6a'};font-family:monospace;text-align:center;margin-top:3px;">chunk ${s}${a?' ✓ fetched':''}</div></div>`;}
+  for(let e=0;e<totalE;e++){const seg=Math.floor(e/ELEMS_PER_SEGMENT);mc+=`<div class="cell mem" id="mcell-${e}" data-seg="${seg}" data-touched="${touched.has(e)?1:0}" title="element ${e}, chunk ${seg}">${e}</div>`;}
+  let bands='';for(let s=0;s<nSeg;s++){bands+=`<div style="display:inline-block;width:${ELEMS_PER_SEGMENT*30}px;margin-right:3px;"><div class="seg-band" id="seg-${s}" data-active="${segs.has(s)?1:0}" style="background:#222530;"></div><div class="seg-label" id="seglabel-${s}" style="font-size:9px;color:#5a5d6a;font-family:monospace;text-align:center;margin-top:3px;">chunk ${s}</div></div>`;}
   const txn=segs.size,ideal=Math.ceil(WARP_SIZE/ELEMS_PER_SEGMENT),eff=Math.round(ideal/txn*100);
-  stage.innerHTML=`<div class="mem-section-title">The warp · 32 threads</div><div class="mem-row">${tc}</div>
+  stage.innerHTML=`
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <div class="mem-section-title" style="margin:0;">The warp · 32 threads</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn primary" id="animate-mem" style="padding:7px 14px;">▶ Animate access</button>
+        <button class="btn" id="show-final" style="padding:7px 14px;">Show final state</button>
+      </div>
+    </div>
+    <div class="mem-row">${tc}</div>
     <div style="text-align:center;color:#5a5d6a;font-size:22px;margin:10px 0;">↓ each thread reads one number from memory ↓</div>
     <div class="mem-section-title">Global memory · each box is one number</div><div class="mem-row">${mc}</div>
     <div style="margin-top:8px;white-space:nowrap;overflow-x:auto;">${bands}</div>
     <div class="mem-section-title">Trips to memory needed</div>
-    <div><span class="txn-badge ${txn<=ideal?'txn-good':'txn-bad'}">${txn} trip${txn===1?'':'s'}</span><span style="margin-left:14px;color:#8a8d99;font-size:13px;">best possible is ${ideal} · you're using ${eff}% of each trip</span></div>`;
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span class="txn-badge ${txn<=ideal?'txn-good':'txn-bad'}" id="txn-counter">0 trips</span>
+      <span style="color:#8a8d99;font-size:13px;">best possible is ${ideal} · will use ${eff}% of each trip</span>
+    </div>`;
   const ms=document.getElementById('mem-stats');
   if(ms)ms.innerHTML=`<div class="stat"><span class="label">Threads</span><span class="value">32</span></div><div class="stat"><span class="label">Memory chunks touched</span><span class="value ${txn<=ideal?'good':'bad'}">${txn}</span></div><div class="stat"><span class="label">Best possible</span><span class="value">${ideal}</span></div><div class="stat"><span class="label">Efficiency</span><span class="value ${eff>=80?'good':eff>=40?'warn':'bad'}">${eff}%</span></div>`;
   const mn=document.getElementById('mem-note');
@@ -534,6 +612,58 @@ function renderMemory(){
   if(code){const p=state.mem.pattern;let ex=p==='coalesced'?'data[tid]':p==='strided'?`data[tid * ${state.mem.stride}]`:p==='offset'?`data[tid + ${state.mem.offset}]`:p==='reverse'?'data[31 - tid]':'data[0]';
     code.innerHTML=`<span class="kw">int</span> tid = threadIdx.x;
 <span class="kw">float</span> v = <span class="fn">${ex}</span>;`;}
+  // Wire animation buttons
+  document.getElementById('animate-mem').addEventListener('click',animateMemory);
+  document.getElementById('show-final').addEventListener('click',showFinalMemoryState);
+  // Auto-start animation on first render of each pattern change
+  setTimeout(animateMemory, 200);
+}
+
+let memAnimTimer=null;
+function stopMemAnim(){ if(memAnimTimer){clearTimeout(memAnimTimer);memAnimTimer=null;} }
+function animateMemory(){
+  stopMemAnim();
+  // Reset visual state
+  document.querySelectorAll('#mem-stage .cell.thread').forEach(el=>el.style.opacity='0.35');
+  document.querySelectorAll('#mem-stage .cell.mem').forEach(el=>{el.classList.remove('touched','seg-active');});
+  document.querySelectorAll('#mem-stage .seg-band').forEach(el=>{el.style.background='#222530';});
+  document.querySelectorAll('#mem-stage .seg-label').forEach(el=>{el.style.color='#5a5d6a'; el.textContent=el.textContent.replace(' ✓ fetched','');});
+  const counter=document.getElementById('txn-counter'); if(counter)counter.textContent='0 trips';
+  const segsHit=new Set();
+  const STEP=70; // ms per thread
+  const animate=(l)=>{
+    if(l>=WARP_SIZE){ memAnimTimer=null; return; }
+    const e=elemFor(l), seg=Math.floor(e/ELEMS_PER_SEGMENT);
+    const tcell=document.getElementById(`tcell-${l}`);
+    const mcell=document.getElementById(`mcell-${e}`);
+    if(tcell)tcell.style.opacity='1';
+    if(mcell){mcell.classList.add('touched'); mcell.classList.add('seg-active');}
+    if(!segsHit.has(seg)){
+      segsHit.add(seg);
+      const band=document.getElementById(`seg-${seg}`);
+      if(band)band.style.background='#ffc14a';
+      const lbl=document.getElementById(`seglabel-${seg}`);
+      if(lbl){lbl.style.color='#ffc14a'; lbl.textContent=`chunk ${seg} ✓ fetched`;}
+      if(counter){const n=segsHit.size; counter.textContent=`${n} trip${n===1?'':'s'}`;}
+    }
+    memAnimTimer=setTimeout(()=>animate(l+1), STEP);
+  };
+  animate(0);
+}
+function showFinalMemoryState(){
+  stopMemAnim();
+  document.querySelectorAll('#mem-stage .cell.thread').forEach(el=>el.style.opacity='1');
+  const segs=segsTouched();
+  for(let l=0;l<WARP_SIZE;l++){
+    const e=elemFor(l); const mcell=document.getElementById(`mcell-${e}`);
+    if(mcell){mcell.classList.add('touched'); mcell.classList.add('seg-active');}
+  }
+  segs.forEach(s=>{
+    const band=document.getElementById(`seg-${s}`); if(band)band.style.background='#ffc14a';
+    const lbl=document.getElementById(`seglabel-${s}`); if(lbl){lbl.style.color='#ffc14a'; lbl.textContent=`chunk ${s} ✓ fetched`;}
+  });
+  const counter=document.getElementById('txn-counter');
+  if(counter){const n=segs.size; counter.textContent=`${n} trip${n===1?'':'s'}`;}
 }
 
 // ---- Occupancy UI ----
@@ -614,7 +744,25 @@ function onMove(ev){
   const h=ray.intersectObject(instancedMesh);
   if(h.length&&h[0].instanceId!==undefined){const m=instanceMeta[h[0].instanceId];if(!m){tooltip.style.display='none';return;}
     if(m.kind==='block')tooltip.innerHTML=`<div><span class="key">block</span> <span class="val">(${m.bx}, ${m.by}, ${m.bz})</span></div><div style="margin-top:4px;color:#8a8d99;font-size:10px;">click to look inside</div>`;
-    else if(m.kind==='thread')tooltip.innerHTML=`<div><span class="key">threadIdx</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div><div><span class="key warp">warp</span> <span class="val warp">${m.warp}</span> <span class="key">lane</span> <span class="val">${m.lane}</span></div>`;
+    else if(m.kind==='thread'){tooltip.innerHTML=`<div><span class="key">threadIdx</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div><div><span class="key warp">warp</span> <span class="val warp">${m.warp}</span> <span class="key">lane</span> <span class="val">${m.lane}</span></div>`;
+      // Update decoder panel
+      const dec=document.getElementById('decoder-panel');
+      if(dec&&state.selectedBlock){
+        const sb=state.selectedBlock, gx=sb.x*state.block.x+m.tx, gy=sb.y*state.block.y+m.ty, gz=sb.z*state.block.z+m.tz;
+        dec.innerHTML=`<div style="margin-bottom:8px; color:#8a8d99;">For this thread:</div>
+          <div style="color:#7ec8ff; line-height:1.8;">
+            <span style="color:#c792ea;">int</span> x = blockIdx.x · blockDim.x + threadIdx.x<br>
+            &nbsp;&nbsp;= <span style="color:#f78c6c;">${sb.x}</span> · <span style="color:#f78c6c;">${state.block.x}</span> + <span style="color:#f78c6c;">${m.tx}</span> = <span style="color:#4affb0;font-weight:600;">${gx}</span><br>
+            <span style="color:#c792ea;">int</span> y = blockIdx.y · blockDim.y + threadIdx.y<br>
+            &nbsp;&nbsp;= <span style="color:#f78c6c;">${sb.y}</span> · <span style="color:#f78c6c;">${state.block.y}</span> + <span style="color:#f78c6c;">${m.ty}</span> = <span style="color:#4affb0;font-weight:600;">${gy}</span><br>
+            ${state.block.z>1||state.grid.z>1?`<span style="color:#c792ea;">int</span> z = blockIdx.z · blockDim.z + threadIdx.z<br>
+            &nbsp;&nbsp;= <span style="color:#f78c6c;">${sb.z}</span> · <span style="color:#f78c6c;">${state.block.z}</span> + <span style="color:#f78c6c;">${m.tz}</span> = <span style="color:#4affb0;font-weight:600;">${gz}</span><br>`:''}
+          </div>
+          <div style="margin-top:10px; padding-top:8px; border-top:1px solid #20222c; color:#8a8d99;">
+            Inside the block: linear tid = <span style="color:#fff;">${m.tid}</span> · warp = <span style="color:#ffc14a;">${m.warp}</span> · lane = <span style="color:#fff;">${m.lane}</span>
+          </div>`;
+      }
+    }
     else if(m.kind==='lane'){if(m.active)tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="key">thread</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div>`;else tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="inactive">idle (no thread here)</span></div>`;}
     tooltip.style.left=(ev.clientX-r.left+14)+'px';tooltip.style.top=(ev.clientY-r.top+14)+'px';tooltip.style.display='block';
   } else tooltip.style.display='none';
@@ -827,6 +975,23 @@ function animate(now){
 requestAnimationFrame(animate);
 document.getElementById('share-btn').addEventListener('click',doShare);
 document.getElementById('export-btn').addEventListener('click',doExport);
+// Glossary
+document.getElementById('glossary-btn').addEventListener('click',()=>document.getElementById('glossary').classList.remove('hidden'));
+document.getElementById('glossary-close').addEventListener('click',()=>document.getElementById('glossary').classList.add('hidden'));
+document.getElementById('glossary').addEventListener('click',e=>{if(e.target.id==='glossary')document.getElementById('glossary').classList.add('hidden');});
+// Keyboard shortcuts
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='?'||(e.shiftKey&&e.key==='/')){ alert('Keyboard shortcuts:\\n\\n1 / 2 / 3 / 4  Switch tabs\\nG  Open glossary\\nT  Start guided tour\\nS  Share link\\nP  Play execution (in warp view)\\nEsc  Back to previous view'); }
+  else if(e.key==='1')switchMode('hierarchy');
+  else if(e.key==='2')switchMode('memory');
+  else if(e.key==='3')switchMode('occupancy');
+  else if(e.key==='4')switchMode('practice');
+  else if(e.key.toLowerCase()==='g')document.getElementById('glossary').classList.toggle('hidden');
+  else if(e.key.toLowerCase()==='t')startTour();
+  else if(e.key.toLowerCase()==='s')doShare();
+  else if(e.key.toLowerCase()==='p'&&state.mode==='hierarchy'&&state.view==='warp'){ if(playAnim)stopPlay();else startPlay(); }
+});
 // Sync URL when memory/occupancy inputs change
 ['change','input'].forEach(ev=>document.addEventListener(ev,e=>{ if(['mem-pattern','mem-stride','mem-offset','occ-gpu','occ-tpb','occ-regs','occ-smem'].includes(e.target.id)) syncURL(); }));
 // Load shared state from URL if present, otherwise default
