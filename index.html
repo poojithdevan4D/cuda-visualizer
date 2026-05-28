@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CUDA Visualizer — See how a GPU runs threads, warps, blocks</title>
+<meta name="description" content="An interactive, beginner-friendly visual tool for learning the CUDA execution model: grid, block, warp, and thread, plus memory coalescing and SM occupancy. Free and open source." />
+<meta name="keywords" content="CUDA, GPU, warp, thread, block, grid, occupancy, memory coalescing, visualizer, learn CUDA" />
+<meta property="og:title" content="CUDA Visualizer — Learn the GPU execution model visually" />
+<meta property="og:description" content="Interactive tool: grid, block, warp, thread, memory coalescing and occupancy, with a guided tour for beginners." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234a9eff'/%3E%3Crect x='6' y='6' width='8' height='8' rx='1.5' fill='%23fff'/%3E%3Crect x='18' y='6' width='8' height='8' rx='1.5' fill='%23bcdcff'/%3E%3Crect x='6' y='18' width='8' height='8' rx='1.5' fill='%23bcdcff'/%3E%3Crect x='18' y='18' width='8' height='8' rx='1.5' fill='%23fff'/%3E%3C/svg%3E" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0b0c10; color: #e8e8ea; overflow: hidden; height: 100vh;
+  }
+  .topbar {
+    height: 52px; background: #0d0e13; border-bottom: 1px solid #20222c;
+    display: flex; align-items: center; padding: 0 20px; gap: 6px;
+  }
+  .topbar .brand { font-weight: 700; color: #fff; font-size: 15px; margin-right: 20px; letter-spacing: -0.01em; }
+  .tab { background: transparent; border: none; color: #8a8d99; padding: 9px 16px; font-size: 13px; cursor: pointer; font-family: inherit; border-radius: 6px; font-weight: 500; }
+  .tab:hover { color: #ccc; background: #181a22; }
+  .tab.active { color: #fff; background: #1e2a4a; }
+  .tab-num { display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; background:#2a2d3a; border-radius:50%; font-size:10px; margin-right:6px; color:#aaa; }
+  .tab.active .tab-num { background:#4a9eff; color:#fff; }
+  .tour-btn { margin-left: auto; background: #4a9eff; border: none; color: #fff; padding: 9px 18px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .tour-btn:hover { background: #6ab0ff; }
+  .app { display: grid; grid-template-columns: 300px 1fr 300px; height: calc(100vh - 52px); width: 100vw; }
+  .sidebar { background: #0f1016; border-right: 1px solid #20222c; padding: 22px; overflow-y: auto; }
+  .sidebar-right { border-right: none; border-left: 1px solid #20222c; }
+  .stage { position: relative; background: #07080c; overflow: auto; }
+  #canvas { display: block; }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; color: #fff; }
+  .subtitle { font-size: 12.5px; color: #8a8d99; margin-bottom: 22px; line-height: 1.5; }
+  h2 { font-size: 11px; font-weight: 700; color: #6a6d7a; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; margin-top: 24px; }
+  h2:first-of-type { margin-top: 0; }
+  .input-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+  .input-cell label { display:block; font-size: 10px; color: #6a6d7a; margin-bottom: 3px; text-transform: uppercase; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: #8a8d99; margin-bottom: 5px; }
+  input, select { background: #181a22; border: 1px solid #2a2d3a; color: #fff; padding: 8px 10px; font-size: 13px; border-radius: 6px; width: 100%; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: #4a9eff; }
+  input.error { border-color: #ff5a5a; }
+  .stat { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #181a22; font-size: 13px; }
+  .stat:last-child { border-bottom: none; }
+  .stat .label { color: #8a8d99; }
+  .stat .value { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .value.warn { color: #ffc14a; } .stat .value.good { color: #4affb0; } .stat .value.bad { color: #ff8a5a; }
+  .controls { position: absolute; top: 18px; left: 18px; display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; max-width: 60%; }
+  .btn { background: rgba(24,26,34,0.9); border: 1px solid #2a2d3a; color: #ccc; padding: 9px 15px; font-size: 12px; border-radius: 6px; cursor: pointer; font-family: inherit; transition: all 0.15s; font-weight: 500; }
+  .btn:hover { background: #222530; border-color: #4a5060; color: #fff; }
+  .btn.active { background: #1e2a4a; border-color: #4a9eff; color: #fff; }
+  .btn.primary { background: #4a9eff; border-color: #4a9eff; color: #fff; }
+  .btn.primary:hover { background: #6ab0ff; }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .breadcrumb { position: absolute; top: 18px; right: 18px; background: rgba(15,16,22,0.94); border: 1px solid #2a2d3a; padding: 9px 15px; font-size: 12px; border-radius: 6px; color: #8a8d99; z-index: 10; max-width: 36%; text-align: right; }
+  .breadcrumb strong { color: #fff; }
+  .breadcrumb .sep { color: #4a4d5a; padding: 0 6px; }
+  .breadcrumb .crumb { cursor: pointer; } .breadcrumb .crumb:hover { color: #4a9eff; }
+  .infocard { position: absolute; bottom: 18px; left: 18px; background: rgba(15,16,22,0.96); border: 1px solid #2a2d3a; padding: 14px 16px; font-size: 12.5px; border-radius: 8px; color: #b8bbc6; z-index: 10; max-width: 360px; line-height: 1.55; }
+  .infocard .ic-title { color: #fff; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+  .infocard .ic-analogy { color: #ffc14a; font-style: italic; margin-top: 6px; font-size: 11.5px; }
+  .tooltip { position: absolute; background: rgba(0,0,0,0.96); border: 1px solid #4a9eff; padding: 10px 12px; font-size: 11px; border-radius: 6px; pointer-events: none; z-index: 100; font-family: 'Monaco','Menlo',monospace; line-height: 1.6; color: #fff; white-space: nowrap; display: none; }
+  .tooltip .key { color: #8a8d99; } .tooltip .val { color: #fff; font-weight: 500; } .tooltip .warp { color: #ffc14a; } .tooltip .inactive { color: #ff5a5a; }
+  .code { background: #07080c; border: 1px solid #181a22; padding: 12px; font-family: 'Monaco','Menlo',monospace; font-size: 11px; color: #7ec8ff; border-radius: 6px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .code .kw { color: #c792ea; } .code .num { color: #f78c6c; } .code .fn { color: #82aaff; } .code .cm { color: #5a6a7a; }
+  .note { background: #181a22; border-left: 3px solid #ffc14a; padding: 11px 13px; font-size: 11.5px; color: #c8cbd6; line-height: 1.55; margin-top: 14px; border-radius: 0 6px 6px 0; }
+  .help-row { font-size: 12px; color: #8a8d99; margin-top: 8px; line-height: 1.6; }
+  .help-row strong { color: #c8cbd6; }
+  .define { border-bottom: 1px dotted #6a6d7a; cursor: help; }
+  .warp-list { display: flex; flex-direction: column; gap: 5px; }
+  .warp-list-item { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; background: #181a22; border: 1px solid #20222c; border-radius: 6px; cursor: pointer; transition: all 0.15s; font-size: 11px; }
+  .warp-list-item:hover { border-color: #4a9eff; background: #1a2438; }
+  .warp-list-color { width: 12px; height: 12px; border-radius: 3px; }
+  .warp-list-label { color: #ddd; font-family: 'Monaco','Menlo',monospace; }
+  .warp-list-meta { color: #8a8d99; font-family: 'Monaco','Menlo',monospace; font-size: 10px; }
+  .lane-info { background: #181a22; border: 1px solid #20222c; padding: 13px; border-radius: 6px; font-family: 'Monaco','Menlo',monospace; font-size: 11px; line-height: 1.7; }
+  .lane-info .row { display: flex; justify-content: space-between; } .lane-info .k { color: #8a8d99; } .lane-info .v { color: #fff; }
+  /* Memory view */
+  .mem-stage { padding: 32px; height: 100%; overflow: auto; }
+  .mem-section-title { font-size: 12px; color: #6a6d7a; text-transform: uppercase; letter-spacing: 0.06em; margin: 22px 0 12px; font-weight: 700; }
+  .mem-row { display: flex; flex-wrap: wrap; gap: 3px; }
+  .cell { width: 27px; height: 27px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-family: 'Monaco','Menlo',monospace; border: 1px solid #20222c; color: #555; position: relative; transition: all 0.3s; }
+  .cell.thread { background: #1e2a4a; border-color: #4a9eff; color: #cde; }
+  .cell.mem { background: #131419; }
+  .cell.mem.touched { background: #1f4a2f; border-color: #4affb0; color: #cfc; }
+  .cell.seg-active { box-shadow: inset 0 0 0 2px #ffc14a; }
+  .seg-band { height: 9px; border-radius: 3px; margin-top: 3px; transition: background 0.3s; }
+  .txn-badge { display: inline-block; padding: 6px 14px; border-radius: 6px; font-family: 'Monaco','Menlo',monospace; font-size: 14px; font-weight: 700; }
+  .txn-good { background: #16331f; color: #4affb0; border: 1px solid #2a5a3a; }
+  .txn-bad { background: #331616; color: #ff8a5a; border: 1px solid #5a2a2a; }
+  /* Occupancy view */
+  .occ-stage { padding: 32px; height: 100%; overflow: auto; max-width: 780px; }
+  .occ-bar-wrap { margin: 18px 0; }
+  .occ-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: #8a8d99; margin-bottom: 5px; }
+  .occ-bar { height: 30px; background: #181a22; border-radius: 6px; overflow: hidden; border: 1px solid #20222c; }
+  .occ-bar-fill { height: 100%; transition: width 0.5s ease; display: flex; align-items: center; padding-left: 12px; font-size: 12px; color: #000; font-weight: 700; }
+  .limiter-tag { display: inline-block; background: #331616; color: #ff8a5a; border: 1px solid #5a2a2a; padding: 2px 9px; border-radius: 4px; font-size: 11px; margin-left: 8px; }
+  .occ-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .occ-card { background: #0f1016; border: 1px solid #20222c; border-radius: 8px; padding: 18px; }
+  .occ-card h3 { font-size: 11px; color: #6a6d7a; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+  .occ-limit-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid #181a22; }
+  .occ-limit-row:last-child { border-bottom: none; }
+  .occ-limit-row .lim { color: #8a8d99; } .occ-limit-row .lim-v { color: #fff; font-family: monospace; }
+  .occ-limit-row.active-limiter { background: #2a1616; margin: 0 -10px; padding: 5px 10px; border-radius: 4px; }
+  .occ-limit-row.active-limiter .lim, .occ-limit-row.active-limiter .lim-v { color: #ff8a5a; }
+  .hidden { display: none !important; }
+  /* Welcome modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(5,6,10,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+  .modal { background: #0f1016; border: 1px solid #2a2d3a; border-radius: 14px; padding: 40px; max-width: 540px; text-align: center; }
+  .modal h1 { font-size: 26px; margin-bottom: 12px; }
+  .modal p { color: #b8bbc6; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+  .modal .modal-btns { display: flex; gap: 12px; justify-content: center; }
+  .modal .big-btn { padding: 14px 28px; font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; border: none; font-family: inherit; }
+  .modal .big-btn.primary { background: #4a9eff; color: #fff; }
+  .modal .big-btn.primary:hover { background: #6ab0ff; }
+  .modal .big-btn.ghost { background: transparent; color: #8a8d99; border: 1px solid #2a2d3a; }
+  .modal .big-btn.ghost:hover { color: #fff; border-color: #4a5060; }
+  /* Tour overlay */
+  .tour-card { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); background: #11131c; border: 1px solid #4a9eff; border-radius: 12px; padding: 22px 26px; max-width: 560px; width: calc(100% - 64px); z-index: 900; box-shadow: 0 12px 48px rgba(0,0,0,0.6); }
+  .tour-card .tour-step { font-size: 11px; color: #4a9eff; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .tour-card h3 { font-size: 19px; color: #fff; margin-bottom: 10px; }
+  .tour-card p { color: #c8cbd6; font-size: 13.5px; line-height: 1.6; margin-bottom: 8px; }
+  .tour-card .analogy { color: #ffc14a; font-style: italic; font-size: 12.5px; background: #1a1812; padding: 10px 12px; border-radius: 6px; margin: 10px 0; border-left: 3px solid #ffc14a; }
+  .tour-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+  .tour-dots { display: flex; gap: 6px; }
+  .tour-dot { width: 7px; height: 7px; border-radius: 50%; background: #2a2d3a; }
+  .tour-dot.active { background: #4a9eff; }
+  .tour-actions { display: flex; gap: 10px; }
+  @media (max-width: 1100px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    .sidebar, .sidebar-right { max-height: 26vh; border-right: none; border-bottom: 1px solid #20222c; }
+    .tour-card { bottom: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">CUDA Visualizer</span>
+  <button class="tab active" data-mode="hierarchy"><span class="tab-num">1</span>Structure</button>
+  <button class="tab" data-mode="memory"><span class="tab-num">2</span>Memory</button>
+  <button class="tab" data-mode="occupancy"><span class="tab-num">3</span>Occupancy</button>
+  <button class="tab" data-mode="practice"><span class="tab-num">?</span>Practice</button>
+  <div style="margin-left:auto; display:flex; gap:8px;">
+    <button class="btn" id="share-btn" title="Copy a link to this exact view">🔗 Share</button>
+    <button class="btn" id="export-btn" title="Save the current view as a PNG image">⬇ Image</button>
+    <button class="tour-btn" id="start-tour">▶ Guided Tour</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="sidebar" id="left-sidebar"></aside>
+  <main class="stage" id="stage">
+    <div id="hier-stage">
+      <div class="controls">
+        <button class="btn" id="btn-back" style="display:none;">← Back</button>
+        <button class="btn active" id="btn-3d">3D</button>
+        <button class="btn" id="btn-2d">2D</button>
+        <button class="btn" id="btn-play" style="display:none;">▶ Play execution</button>
+      </div>
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div class="infocard" id="infocard"></div>
+      <canvas id="canvas"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <div id="mem-stage" class="mem-stage hidden"></div>
+    <div id="occ-stage" class="occ-stage hidden"></div>
+    <div id="practice-stage" class="occ-stage hidden"></div>
+  </main>
+  <aside class="sidebar sidebar-right" id="right-sidebar"></aside>
+</div>
+
+<!-- Welcome modal -->
+<div class="modal-bg" id="welcome">
+  <div class="modal">
+    <h1>How does a GPU run thousands of threads at once?</h1>
+    <p>This tool shows you the pieces, a <strong>thread</strong>, a <strong>warp</strong>, a <strong>block</strong>, and the <strong>grid</strong>, and how they fit together. No CUDA experience needed. If you're brand new, take the guided tour. It uses a simple army analogy and walks you through everything in a couple of minutes.</p>
+    <div class="modal-btns">
+      <button class="big-btn primary" id="welcome-tour">Take the guided tour</button>
+      <button class="big-btn ghost" id="welcome-explore">Let me explore</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tour card -->
+<div class="tour-card hidden" id="tour-card"></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const WARP_SIZE=32, MAX_INSTANCES=200000, BYTES_PER_ELEM=4, SEGMENT_BYTES=128;
+const ELEMS_PER_SEGMENT=SEGMENT_BYTES/BYTES_PER_ELEM;
+const WARP_COLORS=[0x4a9eff,0xffc14a,0x4affb0,0xff5a9e,0xb85aff,0xffe04a,0x4affff,0xff8a5a,0xa4ff5a,0xff5a5a,0x7a8aff,0xff5ad4,0x4affd4,0xd45aff,0xffd45a,0x5ad4ff];
+
+const state = {
+  mode:'hierarchy', grid:{x:4,y:4,z:1}, block:{x:8,y:8,z:1},
+  view:'grid', dimMode:'3d', selectedBlock:null, selectedWarp:null,
+  mem:{pattern:'coalesced',stride:2,offset:1},
+  occ:{gpu:'ampere',threadsPerBlock:256,regsPerThread:32,smemPerBlock:0},
+  tourStep:-1,
+  practice:{q:null,score:0,answered:0,streak:0},
+};
+
+const PRESETS={
+  hierarchy:[
+    {label:'Image processing (2D)', grid:{x:8,y:8,z:1}, block:{x:16,y:16,z:1}},
+    {label:'1D vector add', grid:{x:16,y:1,z:1}, block:{x:256,y:1,z:1}},
+    {label:'Perfect block (256)', grid:{x:4,y:4,z:1}, block:{x:16,y:16,z:1}},
+    {label:'Wasted lanes (100 threads)', grid:{x:4,y:4,z:1}, block:{x:10,y:10,z:1}},
+    {label:'Tiny demo (one warp)', grid:{x:2,y:2,z:1}, block:{x:8,y:4,z:1}},
+    {label:'3D volume', grid:{x:4,y:4,z:2}, block:{x:8,y:8,z:2}},
+  ],
+};
+
+const GPU_PRESETS={
+  ampere:{name:'Ampere (RTX 30xx, e.g. 3050)',warpsPerSM:48,threadsPerSM:1536,blocksPerSM:16,regsPerSM:65536,smemPerSM:102400,maxThreadsPerBlock:1024},
+  ada:{name:'Ada (RTX 40xx)',warpsPerSM:48,threadsPerSM:1536,blocksPerSM:24,regsPerSM:65536,smemPerSM:102400,maxThreadsPerBlock:1024},
+  turing:{name:'Turing (RTX 20xx)',warpsPerSM:32,threadsPerSM:1024,blocksPerSM:16,regsPerSM:65536,smemPerSM:65536,maxThreadsPerBlock:1024},
+  hopper:{name:'Hopper (H100)',warpsPerSM:64,threadsPerSM:2048,blocksPerSM:32,regsPerSM:65536,smemPerSM:233472,maxThreadsPerBlock:1024},
+};
+
+// ---- Three.js ----
+const canvas=document.getElementById('canvas');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x07080c);
+const camera=new THREE.PerspectiveCamera(45,1,0.1,5000); camera.position.set(20,20,30);
+const controls=new OrbitControls(camera,canvas); controls.enableDamping=true; controls.dampingFactor=0.1;
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const d1=new THREE.DirectionalLight(0xffffff,0.5); d1.position.set(10,20,10); scene.add(d1);
+const d2=new THREE.DirectionalLight(0x88aaff,0.25); d2.position.set(-10,-10,-10); scene.add(d2);
+
+let labelSprites=[], instancedMesh=null, instanceMeta=[];
+// camera tween
+let camTween=null;
+// playback animation
+let playAnim=null;
+
+function resize(){
+  const stg=document.getElementById('hier-stage');
+  if(stg.classList.contains('hidden'))return;
+  const w=stg.clientWidth,h=stg.clientHeight; if(!w||!h)return;
+  renderer.setSize(w,h,false); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize);
+
+function threadsPerBlock(){return state.block.x*state.block.y*state.block.z;}
+function blocksPerGrid(){return state.grid.x*state.grid.y*state.grid.z;}
+function totalThreads(){return threadsPerBlock()*blocksPerGrid();}
+function warpsPerBlock(){return Math.ceil(threadsPerBlock()/WARP_SIZE);}
+function totalWarps(){return warpsPerBlock()*blocksPerGrid();}
+function activeLanesLast(){const r=threadsPerBlock()%WARP_SIZE;return r===0?WARP_SIZE:r;}
+function linearTid(x,y,z){return z*(state.block.x*state.block.y)+y*state.block.x+x;}
+function tidToCoords(t){const bxy=state.block.x*state.block.y;const tz=Math.floor(t/bxy);const r=t-tz*bxy;const ty=Math.floor(r/state.block.x);return{tx:r-ty*state.block.x,ty,tz};}
+function warpOf(t){return Math.floor(t/WARP_SIZE);}
+function laneOf(t){return t%WARP_SIZE;}
+
+function makeTextSprite(text,color='#fff'){
+  const c=document.createElement('canvas');c.width=128;c.height=128;
+  const x=c.getContext('2d');x.fillStyle=color;x.font='bold 56px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(text,64,64);
+  const t=new THREE.CanvasTexture(c);t.minFilter=THREE.LinearFilter;
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(0.7,0.7,1);return s;
+}
+function clearLabels(){labelSprites.forEach(s=>{scene.remove(s);s.material.map.dispose();s.material.dispose();});labelSprites=[];}
+function clearInstanced(){if(instancedMesh){scene.remove(instancedMesh);instancedMesh.geometry.dispose();instancedMesh.material.dispose();instancedMesh=null;}instanceMeta=[];clearLabels();}
+
+function tweenCamera(toPos,toTarget,dur=700){
+  camTween={fromPos:camera.position.clone(),toPos:toPos.clone(),fromTar:controls.target.clone(),toTar:toTarget.clone(),start:performance.now(),dur};
+}
+
+function buildGridView(animate=false){
+  clearInstanced();
+  const {x:gx,y:gy,z:gz}=state.grid,count=gx*gy*gz;
+  if(count>MAX_INSTANCES)return;
+  const geo=new THREE.BoxGeometry(0.85,0.85,0.85),mat=new THREE.MeshStandardMaterial({metalness:0.1,roughness:0.55});
+  instancedMesh=new THREE.InstancedMesh(geo,mat,count);
+  instancedMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3);
+  const dm=new THREE.Object3D(),col=new THREE.Color(),base=new THREE.Color(0x4a9eff);
+  const sp=1.2,ox=(gx-1)/2,oy=(gy-1)/2,oz=(gz-1)/2;let i=0;
+  for(let z=0;z<gz;z++)for(let y=0;y<gy;y++)for(let x=0;x<gx;x++){
+    dm.position.set((x-ox)*sp,(y-oy)*sp,state.dimMode==='2d'?0:(z-oz)*sp);dm.scale.set(1,1,1);dm.updateMatrix();instancedMesh.setMatrixAt(i,dm.matrix);
+    col.copy(base).multiplyScalar(0.65+0.35*((x+y+z)/Math.max(1,gx+gy+gz)));instancedMesh.setColorAt(i,col);
+    instanceMeta[i]={kind:'block',bx:x,by:y,bz:z};i++;
+  }
+  instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
+  const span=Math.max(gx,gy,state.dimMode==='2d'?1:gz)*sp;
+  const tp=new THREE.Vector3(span*1.2,span*1.0,span*1.8);
+  if(animate)tweenCamera(tp,new THREE.Vector3(0,0,0)); else{camera.position.copy(tp);controls.target.set(0,0,0);controls.update();}
+}
+function buildBlockView(animate=false){
+  clearInstanced();if(!state.selectedBlock)return;
+  const {x:bx,y:by,z:bz}=state.block,count=bx*by*bz;if(count>MAX_INSTANCES)return;
+  const geo=new THREE.BoxGeometry(0.78,0.78,0.78),mat=new THREE.MeshStandardMaterial({metalness:0.1,roughness:0.5});
+  instancedMesh=new THREE.InstancedMesh(geo,mat,count);
+  instancedMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3);
+  const dm=new THREE.Object3D(),col=new THREE.Color();
+  const sp=1.0,ox=(bx-1)/2,oy=(by-1)/2,oz=(bz-1)/2;let i=0;
+  for(let z=0;z<bz;z++)for(let y=0;y<by;y++)for(let x=0;x<bx;x++){
+    dm.position.set((x-ox)*sp,(y-oy)*sp,state.dimMode==='2d'?0:(z-oz)*sp);dm.updateMatrix();instancedMesh.setMatrixAt(i,dm.matrix);
+    const tid=linearTid(x,y,z),w=warpOf(tid);col.setHex(WARP_COLORS[w%WARP_COLORS.length]);instancedMesh.setColorAt(i,col);
+    instanceMeta[i]={kind:'thread',tx:x,ty:y,tz:z,tid,warp:w,lane:laneOf(tid)};i++;
+  }
+  instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
+  const span=Math.max(bx,by,state.dimMode==='2d'?1:bz)*sp;
+  const tp=new THREE.Vector3(span*1.3,span*1.0,span*1.8);
+  if(animate)tweenCamera(tp,new THREE.Vector3(0,0,0)); else{camera.position.copy(tp);controls.target.set(0,0,0);controls.update();}
+}
+function buildWarpView(animate=false){
+  clearInstanced();if(!state.selectedBlock||state.selectedWarp==null)return;
+  const wi=state.selectedWarp,tpb=threadsPerBlock(),start=wi*WARP_SIZE,real=Math.min(WARP_SIZE,tpb-start);
+  const cols=8,sp=1.2,oxC=(cols-1)/2,oyR=1.5;
+  const geo=new THREE.BoxGeometry(0.85,0.85,0.85),mat=new THREE.MeshStandardMaterial({metalness:0.05,roughness:0.5});
+  instancedMesh=new THREE.InstancedMesh(geo,mat,WARP_SIZE);
+  instancedMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(WARP_SIZE*3),3);
+  const dm=new THREE.Object3D(),col=new THREE.Color();
+  const hex=WARP_COLORS[wi%WARP_COLORS.length],inact=new THREE.Color(0x2a2d3a);
+  for(let l=0;l<WARP_SIZE;l++){
+    const c=l%cols,r=Math.floor(l/cols),x=(c-oxC)*sp,y=-(r-oyR)*sp;
+    dm.position.set(x,y,0);dm.scale.set(1,1,1);dm.updateMatrix();instancedMesh.setMatrixAt(l,dm.matrix);
+    const active=l<real;if(active)col.setHex(hex);else col.copy(inact);instancedMesh.setColorAt(l,col);
+    let m={kind:'lane',warp:wi,lane:l,active};if(active){const tid=start+l;const cc=tidToCoords(tid);m.tid=tid;m.tx=cc.tx;m.ty=cc.ty;m.tz=cc.tz;}instanceMeta[l]=m;
+    const s=makeTextSprite(String(l),active?'#fff':'#666');s.position.set(x,y,0.6);s.scale.set(0.6,0.6,1);scene.add(s);labelSprites.push(s);
+  }
+  instancedMesh.instanceMatrix.needsUpdate=true;instancedMesh.instanceColor.needsUpdate=true;scene.add(instancedMesh);
+  const tp=new THREE.Vector3(0,0,cols*sp*1.15);
+  if(animate)tweenCamera(tp,new THREE.Vector3(0,0,0)); else{camera.position.copy(tp);controls.target.set(0,0,0);controls.update();}
+}
+function rebuildHier(animate=false){
+  stopPlay();
+  if(state.view==='grid')buildGridView(animate);
+  else if(state.view==='block')buildBlockView(animate);
+  else if(state.view==='warp')buildWarpView(animate);
+  updateHierUI();
+}
+
+// ---- SIMT playback animation (warp view) ----
+function stopPlay(){ if(playAnim){cancelAnimationFrame(playAnim.raf);playAnim=null;} const b=document.getElementById('btn-play'); if(b)b.textContent='▶ Play execution'; }
+function startPlay(){
+  if(state.view!=='warp'||!instancedMesh)return;
+  const wi=state.selectedWarp,tpb=threadsPerBlock(),start=wi*WARP_SIZE,real=Math.min(WARP_SIZE,tpb-start);
+  const baseHex=WARP_COLORS[wi%WARP_COLORS.length];
+  const baseColor=new THREE.Color(baseHex), dim=new THREE.Color(0x202430), white=new THREE.Color(0xffffff), inactive=new THREE.Color(0x2a2d3a);
+  // Sequence: 3 lockstep pulses (all active lanes flash together), then a divergence demo (even lanes, then odd lanes)
+  const seq=[];
+  for(let p=0;p<3;p++) seq.push({label:`Instruction ${p+1}: all 32 lanes run it together (SIMT lockstep)`,type:'all'});
+  seq.push({label:'Now an if-statement splits the warp. First the lanes where the condition is true...',type:'even'});
+  seq.push({label:'...then the other lanes run, one after the other. This is warp divergence (slower).',type:'odd'});
+  seq.push({label:'Branches done. The warp reunites and runs in lockstep again.',type:'all'});
+  let step=0,t0=performance.now();
+  const STEP_MS=1100;
+  function frame(now){
+    const elapsed=now-t0, idx=Math.floor(elapsed/STEP_MS);
+    if(idx>=seq.length){ stopPlay(); for(let l=0;l<WARP_SIZE;l++){ instancedMesh.setColorAt(l, l<real?baseColor:inactive);} instancedMesh.instanceColor.needsUpdate=true; setInfo('Warp execution', 'All 32 lanes move in lockstep, executing the same instruction at the same time. When code branches, the warp splits and runs each path one after another.', 'A warp is like a squad of 32 soldiers who must all do the exact same move on every count.'); return; }
+    const s=seq[idx], localT=(elapsed%STEP_MS)/STEP_MS, pulse=0.5+0.5*Math.sin(localT*Math.PI);
+    for(let l=0;l<WARP_SIZE;l++){
+      if(l>=real){ instancedMesh.setColorAt(l,inactive); continue; }
+      let on=false;
+      if(s.type==='all')on=true;
+      else if(s.type==='even')on=(l%2===0);
+      else if(s.type==='odd')on=(l%2===1);
+      if(on){ const c=baseColor.clone().lerp(white,pulse*0.6); instancedMesh.setColorAt(l,c); }
+      else instancedMesh.setColorAt(l,dim);
+    }
+    instancedMesh.instanceColor.needsUpdate=true;
+    setInfo('Playing…', s.label, '');
+    playAnim={raf:requestAnimationFrame(frame)};
+  }
+  document.getElementById('btn-play').textContent='■ Stop';
+  playAnim={raf:requestAnimationFrame(frame)};
+}
+
+// ---- info card ----
+function setInfo(title,body,analogy){
+  const el=document.getElementById('infocard');
+  el.innerHTML=`<div class="ic-title">${title}</div><div>${body}</div>${analogy?`<div class="ic-analogy">${analogy}</div>`:''}`;
+}
+
+// ============================================================================
+// Sidebars
+// ============================================================================
+function fmt(n){return n.toLocaleString();}
+function renderLeftSidebar(){
+  const el=document.getElementById('left-sidebar');
+  if(state.mode==='hierarchy'){
+    el.innerHTML=`<h1>Structure</h1><div class="subtitle">A <strong>grid</strong> of <strong>blocks</strong>. Each block holds <strong>threads</strong>, split into <strong>warps</strong> of 32.</div>
+      <h2>Quick examples</h2>
+      <div class="field"><select id="preset-hier"><option value="">Load an example…</option>${PRESETS.hierarchy.map((p,i)=>`<option value="${i}">${p.label}</option>`).join('')}</select></div>
+      <h2>Grid size (number of blocks)</h2>
+      <div class="input-row">
+        <div class="input-cell"><label>X</label><input id="gx" type="number" min="1" max="64" value="${state.grid.x}"/></div>
+        <div class="input-cell"><label>Y</label><input id="gy" type="number" min="1" max="64" value="${state.grid.y}"/></div>
+        <div class="input-cell"><label>Z</label><input id="gz" type="number" min="1" max="16" value="${state.grid.z}"/></div></div>
+      <h2>Block size (threads per block)</h2>
+      <div class="input-row">
+        <div class="input-cell"><label>X</label><input id="bx" type="number" min="1" max="1024" value="${state.block.x}"/></div>
+        <div class="input-cell"><label>Y</label><input id="by" type="number" min="1" max="1024" value="${state.block.y}"/></div>
+        <div class="input-cell"><label>Z</label><input id="bz" type="number" min="1" max="64" value="${state.block.z}"/></div></div>
+      <h2>The numbers</h2><div id="stats"></div>
+      <div id="warp-note" class="note" style="display:none;"></div>`;
+    wireHierInputs();
+  } else if(state.mode==='memory'){
+    el.innerHTML=`<h1>Memory</h1><div class="subtitle">How a warp's 32 threads read memory, and why some ways are far faster.</div>
+      <div class="field"><label>How threads access memory</label>
+        <select id="mem-pattern">
+          <option value="coalesced">Neighbouring (data[tid])</option>
+          <option value="strided">Spread out (data[tid·stride])</option>
+          <option value="offset">Shifted (data[tid+N])</option>
+          <option value="reverse">Reversed (data[31-tid])</option>
+          <option value="broadcast">All the same (data[0])</option>
+        </select></div>
+      <div class="field" id="stride-field"><label>Spread amount (stride)</label><input id="mem-stride" type="number" min="1" max="16" value="${state.mem.stride}"/></div>
+      <div class="field" id="offset-field" style="display:none;"><label>Shift amount</label><input id="mem-offset" type="number" min="1" max="31" value="${state.mem.offset}"/></div>
+      <h2>Result</h2><div id="mem-stats"></div>
+      <div id="mem-note" class="note"></div>`;
+    wireMemInputs();
+  } else {
+    el.innerHTML=`<h1>Occupancy</h1><div class="subtitle">How full you keep a GPU core. Fuller usually means it hides waiting time better.</div>
+      <div class="field"><label>GPU</label><select id="occ-gpu">${Object.entries(GPU_PRESETS).map(([k,v])=>`<option value="${k}" ${k===state.occ.gpu?'selected':''}>${v.name}</option>`).join('')}</select></div>
+      <div class="field"><label>Threads per block</label><input id="occ-tpb" type="number" min="1" max="1024" value="${state.occ.threadsPerBlock}"/></div>
+      <div class="field"><label>Registers per thread</label><input id="occ-regs" type="number" min="1" max="255" value="${state.occ.regsPerThread}"/></div>
+      <div class="field"><label>Shared memory per block (bytes)</label><input id="occ-smem" type="number" min="0" max="233472" value="${state.occ.smemPerBlock}"/></div>
+      <h2>This GPU's limits</h2><div id="occ-limits"></div>`;
+    wireOccInputs();
+  }
+}
+function renderRightSidebar(){
+  const el=document.getElementById('right-sidebar');
+  if(state.mode==='hierarchy'){
+    el.innerHTML=`<div id="right-content"></div><h2>The matching CUDA code</h2><div class="code" id="code-launch"></div>
+      <h2>In plain words</h2><div class="help-row" style="margin-top:0;">Every thread gets an ID so it knows which piece of data to work on. The <strong>warp</strong> (a group of 32 threads) is what the hardware actually runs at once. All 32 do the same instruction at the same time.</div>`;
+  } else if(state.mode==='memory'){
+    el.innerHTML=`<h2>The one big idea</h2><div class="help-row" style="margin-top:0;">The GPU fetches memory in <strong>chunks of ${SEGMENT_BYTES} bytes</strong> (${ELEMS_PER_SEGMENT} floats) at a time. If all 32 threads of a warp want data from the <strong>same chunk</strong>, the GPU makes <strong>one trip</strong>. If their data is scattered across many chunks, it makes <strong>many trips</strong>, and most of each trip is wasted.</div>
+      <h2>Why you should care</h2><div class="help-row" style="margin-top:0;">Same math, same threads, but scattered reads can be many times slower than neighbouring reads. This is usually the first thing to fix when a kernel is slow.</div>
+      <h2>The matching code</h2><div class="code" id="mem-code"></div>`;
+  } else {
+    el.innerHTML=`<h2>What is occupancy</h2><div class="help-row" style="margin-top:0;">A GPU core (called an <span class="define" title="Streaming Multiprocessor: one of the GPU's processing units">SM</span>) can only keep so many warps in flight. Occupancy is how many you actually keep busy, as a percent of the maximum. More busy warps means the GPU can switch to another warp while one waits for memory, hiding the wait.</div>
+      <h2>What can limit it</h2><div class="help-row" style="margin-top:0;">Four things compete: a hard cap on blocks, the warp budget, the register budget, and the shared-memory budget. Whichever runs out first is your limiter. The tool highlights it in red.</div>
+      <h2>The calculation</h2><div class="code" id="occ-code"></div>`;
+  }
+}
+
+// ---- Hierarchy UI ----
+function updateHierUI(){
+  const tpb=threadsPerBlock(),bpg=blocksPerGrid(),tot=totalThreads(),wpb=warpsPerBlock(),tw=totalWarps();
+  const aL=activeLanesLast(),waste=aL===WARP_SIZE?0:WARP_SIZE-aL;
+  const se=document.getElementById('stats');if(!se)return;
+  se.innerHTML=`<div class="stat"><span class="label">Blocks in grid</span><span class="value">${fmt(bpg)}</span></div>
+    <div class="stat"><span class="label">Threads per block</span><span class="value">${fmt(tpb)}</span></div>
+    <div class="stat"><span class="label">Warps per block</span><span class="value">${fmt(wpb)}</span></div>
+    <div class="stat"><span class="label">Total threads</span><span class="value">${fmt(tot)}</span></div>
+    <div class="stat"><span class="label">Total warps</span><span class="value">${fmt(tw)}</span></div>
+    <div class="stat"><span class="label">Lanes used in last warp</span><span class="value ${waste>0?'warn':''}">${aL} / ${WARP_SIZE}</span></div>`;
+  const note=document.getElementById('warp-note');
+  if(waste>0){note.style.display='block';note.innerHTML=`Your block has ${tpb} threads, which is not a multiple of 32. The last warp only uses ${aL} of its 32 lanes, so ${waste} lanes sit idle in every block. Pick a multiple of 32 (like ${Math.ceil(tpb/32)*32}) to waste nothing.`;}
+  else note.style.display='none';
+  document.getElementById('code-launch').innerHTML=`<span class="cm">// launch the kernel</span>
+<span class="kw">dim3</span> grid(<span class="num">${state.grid.x}</span>, <span class="num">${state.grid.y}</span>, <span class="num">${state.grid.z}</span>);
+<span class="kw">dim3</span> block(<span class="num">${state.block.x}</span>, <span class="num">${state.block.y}</span>, <span class="num">${state.block.z}</span>);
+<span class="fn">myKernel</span>&lt;&lt;&lt;grid, block&gt;&gt;&gt;();`;
+  updateRightContent();
+  const cb=document.getElementById('breadcrumb');
+  let cr=`<span class="crumb" data-target="grid">Grid</span>`;
+  if(state.view==='block'||state.view==='warp'){const sb=state.selectedBlock;cr+=`<span class="sep">›</span><span class="crumb" data-target="block">Block (${sb.x},${sb.y},${sb.z})</span>`;}
+  if(state.view==='warp')cr+=`<span class="sep">›</span><span><strong>Warp ${state.selectedWarp}</strong></span>`;
+  cb.innerHTML=cr;
+  cb.querySelectorAll('.crumb').forEach(e=>e.addEventListener('click',()=>{if(e.dataset.target==='grid'){state.view='grid';state.selectedBlock=null;state.selectedWarp=null;}else{state.view='block';state.selectedWarp=null;}rebuildHier(true);}));
+
+  // Info card by view
+  if(state.view==='grid')setInfo('The grid','Every cube here is a block of threads. The whole set is your grid, launched all at once. Blocks run independently and the GPU schedules them in any order. Click a block to look inside.','Think of the grid as the whole army and each block as a platoon.');
+  else if(state.view==='block')setInfo('A block','Each small cube is one thread. Colours group them into warps of 32. Click a thread (or a warp on the right) to zoom into one warp.','A block is a platoon. Inside it, threads are split into squads of 32, called warps.');
+  else setInfo('A warp','All 32 lanes here are one warp. The hardware runs all of them at the same time, doing the same instruction. Press Play to watch it.','A warp is a squad of 32 soldiers who all do the exact same move at the same time.');
+
+  document.getElementById('btn-3d').classList.toggle('active',state.dimMode==='3d');
+  document.getElementById('btn-2d').classList.toggle('active',state.dimMode==='2d');
+  const bb=document.getElementById('btn-back');
+  if(state.view==='grid')bb.style.display='none';else{bb.style.display='';bb.textContent=state.view==='warp'?'← Back to block':'← Back to grid';}
+  document.getElementById('btn-3d').disabled=state.view==='warp';
+  document.getElementById('btn-2d').disabled=state.view==='warp';
+  document.getElementById('btn-play').style.display=state.view==='warp'?'':'none';
+}
+function updateRightContent(){
+  const el=document.getElementById('right-content');if(!el)return;
+  if(state.view==='grid')el.innerHTML=`<h2>Where you are</h2><div class="help-row" style="margin-top:0;">Looking at the whole <strong>grid</strong>. Click any block to go one level deeper.</div>`;
+  else if(state.view==='block'){
+    const wpb=warpsPerBlock(),tpb=threadsPerBlock();let items='';
+    for(let w=0;w<wpb;w++){const c=WARP_COLORS[w%WARP_COLORS.length].toString(16).padStart(6,'0');const s=w*WARP_SIZE,e=Math.min(s+WARP_SIZE,tpb)-1,rc=Math.min(WARP_SIZE,tpb-s),p=rc<WARP_SIZE?` (${rc}/32)`:'';items+=`<div class="warp-list-item" data-warp="${w}"><div class="warp-list-color" style="background:#${c}"></div><div class="warp-list-label">Warp ${w}</div><div class="warp-list-meta">threads ${s}–${e}${p}</div></div>`;}
+    el.innerHTML=`<h2>Warps in this block</h2><div class="warp-list">${items}</div><div class="help-row">Click any warp to see its 32 lanes and play execution.</div>`;
+    el.querySelectorAll('.warp-list-item').forEach(it=>it.addEventListener('click',()=>{state.selectedWarp=parseInt(it.dataset.warp,10);state.view='warp';rebuildHier(true);}));
+  } else {
+    const w=state.selectedWarp,tpb=threadsPerBlock(),s=w*WARP_SIZE,rc=Math.min(WARP_SIZE,tpb-s),inact=WARP_SIZE-rc;
+    const c=WARP_COLORS[w%WARP_COLORS.length].toString(16).padStart(6,'0');
+    el.innerHTML=`<h2>This warp</h2><div class="lane-info"><div class="row"><span class="k">threads</span><span class="v">${s} – ${s+rc-1}</span></div><div class="row"><span class="k">active lanes</span><span class="v">${rc} / 32</span></div><div class="row"><span class="k">idle lanes</span><span class="v" style="color:${inact>0?'#ff8a5a':'#fff'};">${inact}</span></div></div>
+      <h2>Try this</h2><div class="help-row" style="margin-top:0;">Press <strong>Play execution</strong> on the left. Watch all lanes flash together (lockstep), then watch them split for an if-statement (divergence), then rejoin.</div>`;
+  }
+}
+
+// ---- Memory UI ----
+function elemFor(lane){const m=state.mem;switch(m.pattern){case'coalesced':return lane;case'strided':return lane*m.stride;case'offset':return lane+m.offset;case'reverse':return 31-lane;case'broadcast':return 0;default:return lane;}}
+function segsTouched(){const s=new Set();for(let l=0;l<WARP_SIZE;l++)s.add(Math.floor(elemFor(l)/ELEMS_PER_SEGMENT));return s;}
+function renderMemory(){
+  const stage=document.getElementById('mem-stage');
+  const accessed=[];let maxE=0;for(let l=0;l<WARP_SIZE;l++){const e=elemFor(l);accessed.push(e);maxE=Math.max(maxE,e);}
+  const segs=segsTouched();const nSeg=Math.max(...[...segs])+1;const totalE=Math.max(WARP_SIZE,nSeg*ELEMS_PER_SEGMENT);
+  let tc='';for(let l=0;l<WARP_SIZE;l++)tc+=`<div class="cell thread" title="thread ${l} reads element ${accessed[l]}">${l}</div>`;
+  const touched=new Set(accessed);let mc='';
+  for(let e=0;e<totalE;e++){const seg=Math.floor(e/ELEMS_PER_SEGMENT);mc+=`<div class="cell mem ${touched.has(e)?'touched':''} ${segs.has(seg)?'seg-active':''}" title="element ${e}, chunk ${seg}">${e}</div>`;}
+  let bands='';for(let s=0;s<nSeg;s++){const a=segs.has(s);bands+=`<div style="display:inline-block;width:${ELEMS_PER_SEGMENT*30}px;margin-right:3px;"><div class="seg-band" style="background:${a?'#ffc14a':'#222530'};"></div><div style="font-size:9px;color:${a?'#ffc14a':'#5a5d6a'};font-family:monospace;text-align:center;margin-top:3px;">chunk ${s}${a?' ✓ fetched':''}</div></div>`;}
+  const txn=segs.size,ideal=Math.ceil(WARP_SIZE/ELEMS_PER_SEGMENT),eff=Math.round(ideal/txn*100);
+  stage.innerHTML=`<div class="mem-section-title">The warp · 32 threads</div><div class="mem-row">${tc}</div>
+    <div style="text-align:center;color:#5a5d6a;font-size:22px;margin:10px 0;">↓ each thread reads one number from memory ↓</div>
+    <div class="mem-section-title">Global memory · each box is one number</div><div class="mem-row">${mc}</div>
+    <div style="margin-top:8px;white-space:nowrap;overflow-x:auto;">${bands}</div>
+    <div class="mem-section-title">Trips to memory needed</div>
+    <div><span class="txn-badge ${txn<=ideal?'txn-good':'txn-bad'}">${txn} trip${txn===1?'':'s'}</span><span style="margin-left:14px;color:#8a8d99;font-size:13px;">best possible is ${ideal} · you're using ${eff}% of each trip</span></div>`;
+  const ms=document.getElementById('mem-stats');
+  if(ms)ms.innerHTML=`<div class="stat"><span class="label">Threads</span><span class="value">32</span></div><div class="stat"><span class="label">Memory chunks touched</span><span class="value ${txn<=ideal?'good':'bad'}">${txn}</span></div><div class="stat"><span class="label">Best possible</span><span class="value">${ideal}</span></div><div class="stat"><span class="label">Efficiency</span><span class="value ${eff>=80?'good':eff>=40?'warn':'bad'}">${eff}%</span></div>`;
+  const mn=document.getElementById('mem-note');
+  if(mn){const p=state.mem.pattern;
+    if(p==='coalesced')mn.innerHTML='Best case. All 32 threads read neighbouring numbers, so they all fall in one chunk. One trip serves the whole warp.';
+    else if(p==='strided')mn.innerHTML=`Spread out by ${state.mem.stride}. The threads land in ${txn} different chunks, so the GPU makes ${txn} trips instead of 1, and throws away most of what each trip brings back.`;
+    else if(p==='offset')mn.innerHTML=`Shifted by ${state.mem.offset}. The warp straddles a chunk boundary, so it needs ${txn} trips instead of 1. Lining your data up to chunk boundaries fixes this.`;
+    else if(p==='reverse')mn.innerHTML='Reversed, but still one trip. The threads read the same set of numbers as the neighbouring case, just in flipped order. What matters is which chunks get touched, not the order.';
+    else mn.innerHTML='All 32 threads read the same number. One trip, and the value is shared to every thread. Cheap on memory.';}
+  const code=document.getElementById('mem-code');
+  if(code){const p=state.mem.pattern;let ex=p==='coalesced'?'data[tid]':p==='strided'?`data[tid * ${state.mem.stride}]`:p==='offset'?`data[tid + ${state.mem.offset}]`:p==='reverse'?'data[31 - tid]':'data[0]';
+    code.innerHTML=`<span class="kw">int</span> tid = threadIdx.x;
+<span class="kw">float</span> v = <span class="fn">${ex}</span>;`;}
+}
+
+// ---- Occupancy UI ----
+function computeOcc(){
+  const g=GPU_PRESETS[state.occ.gpu],tpb=state.occ.threadsPerBlock,wpb=Math.ceil(tpb/WARP_SIZE);
+  const rpb=state.occ.regsPerThread*tpb,smb=state.occ.smemPerBlock;
+  const byBlock=g.blocksPerSM,byWarp=Math.floor(g.warpsPerSM/wpb),byReg=rpb>0?Math.floor(g.regsPerSM/rpb):Infinity,bySmem=smb>0?Math.floor(g.smemPerSM/smb):Infinity;
+  const limits=[{name:'Block cap',val:byBlock},{name:'Warps',val:byWarp},{name:'Registers',val:byReg},{name:'Shared mem',val:bySmem}];
+  const ab=Math.min(byBlock,byWarp,byReg,bySmem),aw=ab*wpb,occ=aw/g.warpsPerSM,lim=limits.reduce((a,b)=>b.val<a.val?b:a);
+  return {g,tpb,wpb,rpb,smb,limits,ab,aw,occ,lim,byBlock,byWarp,byReg,bySmem};
+}
+function renderOcc(){
+  const stage=document.getElementById('occ-stage');const o=computeOcc();const pct=Math.round(o.occ*100);
+  const big=o.tpb>o.g.maxThreadsPerBlock;const cc=pct>=70?'#4affb0':pct>=40?'#ffc14a':'#ff8a5a';
+  stage.innerHTML=`<h1 style="margin-bottom:6px;">${o.g.name}</h1><div class="subtitle">A block of ${o.tpb} threads = ${o.wpb} warps. Using ${state.occ.regsPerThread} registers/thread and ${o.smb} bytes shared memory/block.</div>
+    ${big?`<div class="note" style="border-left-color:#ff5a5a;">${o.tpb} threads per block is over this GPU's limit of ${o.g.maxThreadsPerBlock}. It wouldn't even launch.</div>`:''}
+    <div class="occ-bar-wrap"><div class="occ-bar-label"><span>How full the GPU core is</span><span style="color:${cc};font-weight:700;">${pct}%</span></div>
+      <div class="occ-bar"><div class="occ-bar-fill" style="width:${pct}%;background:${cc};">${o.aw} / ${o.g.warpsPerSM} warps busy</div></div></div>
+    <div class="occ-grid">
+      <div class="occ-card"><h3>How many blocks fit on one core</h3>
+        <div class="occ-limit-row ${o.lim.name==='Block cap'?'active-limiter':''}"><span class="lim">Hard block cap</span><span class="lim-v">${o.byBlock}</span></div>
+        <div class="occ-limit-row ${o.lim.name==='Warps'?'active-limiter':''}"><span class="lim">Limited by warps</span><span class="lim-v">${o.byWarp}</span></div>
+        <div class="occ-limit-row ${o.lim.name==='Registers'?'active-limiter':''}"><span class="lim">Limited by registers</span><span class="lim-v">${o.byReg===Infinity?'∞':o.byReg}</span></div>
+        <div class="occ-limit-row ${o.lim.name==='Shared mem'?'active-limiter':''}"><span class="lim">Limited by shared mem</span><span class="lim-v">${o.bySmem===Infinity?'∞':o.bySmem}</span></div>
+        <div style="margin-top:12px;font-size:12px;color:#8a8d99;">Blocks that fit = <strong style="color:#fff;">${o.ab}</strong><span class="limiter-tag">limiter: ${o.lim.name}</span></div></div>
+      <div class="occ-card"><h3>What one block uses</h3>
+        <div class="occ-limit-row"><span class="lim">Warps</span><span class="lim-v">${o.wpb}</span></div>
+        <div class="occ-limit-row"><span class="lim">Registers</span><span class="lim-v">${fmt(o.rpb)}</span></div>
+        <div class="occ-limit-row"><span class="lim">Shared mem</span><span class="lim-v">${fmt(o.smb)} B</span></div>
+        <div class="occ-limit-row"><span class="lim">Busy warps on core</span><span class="lim-v">${o.aw}</span></div></div></div>
+    <div class="note" style="border-left-color:${cc};margin-top:20px;">${pct>=70?`Good. ${pct}% is usually enough for the GPU to hide memory waits by switching between warps.`:`Only ${pct}% full. The limiter is <strong>${o.lim.name}</strong>. ${o.lim.name==='Registers'?'Each thread uses too many registers. Simpler code or a compiler cap lets more blocks fit.':o.lim.name==='Shared mem'?'Each block asks for too much shared memory. Use less to fit more blocks.':o.lim.name==='Warps'?'Your block size does not pack the core fully. Try a size that divides the warp budget evenly.':'You hit the hard block cap. Bigger blocks (more warps each) would fill the core more.'}`}</div>`;
+  const ol=document.getElementById('occ-limits');
+  if(ol)ol.innerHTML=`<div class="stat"><span class="label">Max warps / core</span><span class="value">${o.g.warpsPerSM}</span></div><div class="stat"><span class="label">Max threads / core</span><span class="value">${fmt(o.g.threadsPerSM)}</span></div><div class="stat"><span class="label">Max blocks / core</span><span class="value">${o.g.blocksPerSM}</span></div><div class="stat"><span class="label">Registers / core</span><span class="value">${fmt(o.g.regsPerSM)}</span></div><div class="stat"><span class="label">Shared mem / core</span><span class="value">${fmt(o.g.smemPerSM)} B</span></div>`;
+  const code=document.getElementById('occ-code');
+  if(code)code.innerHTML=`warps/block = ceil(${o.tpb}/32) = ${o.wpb}
+blocks that fit = min(${o.byBlock}, ${o.byWarp}, ${o.byReg===Infinity?'inf':o.byReg}, ${o.bySmem===Infinity?'inf':o.bySmem}) = ${o.ab}
+busy warps = ${o.ab} × ${o.wpb} = ${o.aw}
+occupancy = ${o.aw} / ${o.g.warpsPerSM} = ${pct}%`;
+}
+
+// ---- input wiring ----
+function wireHierInputs(){
+  const pre=document.getElementById('preset-hier');
+  if(pre)pre.addEventListener('change',()=>{const i=pre.value;if(i==='')return;const p=PRESETS.hierarchy[parseInt(i,10)];state.grid={...p.grid};state.block={...p.block};state.view='grid';state.selectedBlock=null;state.selectedWarp=null;renderLeftSidebar();rebuildHier(true);syncURL();});
+  ['gx','gy','gz','bx','by','bz'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.addEventListener('input',()=>{
+    const v=parseInt(el.value,10);if(isNaN(v)||v<1){el.classList.add('error');return;}el.classList.remove('error');
+    state.grid.x=parseInt(gx.value)||1;state.grid.y=parseInt(gy.value)||1;state.grid.z=parseInt(gz.value)||1;
+    state.block.x=parseInt(bx.value)||1;state.block.y=parseInt(by.value)||1;state.block.z=parseInt(bz.value)||1;
+    if(state.view!=='grid'){const sb=state.selectedBlock;if(!sb||sb.x>=state.grid.x||sb.y>=state.grid.y||sb.z>=state.grid.z){state.view='grid';state.selectedBlock=null;state.selectedWarp=null;}}
+    if(state.view==='warp'&&state.selectedWarp>=warpsPerBlock()){state.view='block';state.selectedWarp=null;}
+    rebuildHier();syncURL();
+  });});
+  document.getElementById('btn-back').addEventListener('click',()=>{if(state.view==='warp'){state.view='block';state.selectedWarp=null;}else if(state.view==='block'){state.view='grid';state.selectedBlock=null;}rebuildHier(true);});
+  document.getElementById('btn-3d').addEventListener('click',()=>{if(state.view==='warp')return;state.dimMode='3d';rebuildHier();});
+  document.getElementById('btn-2d').addEventListener('click',()=>{if(state.view==='warp')return;state.dimMode='2d';rebuildHier();});
+  document.getElementById('btn-play').addEventListener('click',()=>{ if(playAnim)stopPlay(); else startPlay(); });
+}
+function wireMemInputs(){
+  const ps=document.getElementById('mem-pattern');ps.value=state.mem.pattern;
+  ps.addEventListener('change',()=>{state.mem.pattern=ps.value;document.getElementById('stride-field').style.display=ps.value==='strided'?'':'none';document.getElementById('offset-field').style.display=ps.value==='offset'?'':'none';renderMemory();});
+  document.getElementById('stride-field').style.display=state.mem.pattern==='strided'?'':'none';
+  document.getElementById('offset-field').style.display=state.mem.pattern==='offset'?'':'none';
+  document.getElementById('mem-stride').addEventListener('input',e=>{const v=parseInt(e.target.value,10);if(v>=1){state.mem.stride=v;renderMemory();}});
+  document.getElementById('mem-offset').addEventListener('input',e=>{const v=parseInt(e.target.value,10);if(v>=1){state.mem.offset=v;renderMemory();}});
+}
+function wireOccInputs(){
+  document.getElementById('occ-gpu').addEventListener('change',e=>{state.occ.gpu=e.target.value;renderOcc();});
+  document.getElementById('occ-tpb').addEventListener('input',e=>{const v=parseInt(e.target.value,10);if(v>=1){state.occ.threadsPerBlock=v;renderOcc();}});
+  document.getElementById('occ-regs').addEventListener('input',e=>{const v=parseInt(e.target.value,10);if(v>=1){state.occ.regsPerThread=v;renderOcc();}});
+  document.getElementById('occ-smem').addEventListener('input',e=>{const v=parseInt(e.target.value,10);if(v>=0){state.occ.smemPerBlock=v;renderOcc();}});
+}
+
+// ---- picking ----
+const ray=new THREE.Raycaster(),mouse=new THREE.Vector2(),tooltip=document.getElementById('tooltip');
+function onMove(ev){
+  if(state.mode!=='hierarchy'||!instancedMesh){tooltip.style.display='none';return;}
+  const r=canvas.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);
+  const h=ray.intersectObject(instancedMesh);
+  if(h.length&&h[0].instanceId!==undefined){const m=instanceMeta[h[0].instanceId];if(!m){tooltip.style.display='none';return;}
+    if(m.kind==='block')tooltip.innerHTML=`<div><span class="key">block</span> <span class="val">(${m.bx}, ${m.by}, ${m.bz})</span></div><div style="margin-top:4px;color:#8a8d99;font-size:10px;">click to look inside</div>`;
+    else if(m.kind==='thread')tooltip.innerHTML=`<div><span class="key">threadIdx</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div><div><span class="key warp">warp</span> <span class="val warp">${m.warp}</span> <span class="key">lane</span> <span class="val">${m.lane}</span></div>`;
+    else if(m.kind==='lane'){if(m.active)tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="key">thread</span> <span class="val">(${m.tx}, ${m.ty}, ${m.tz})</span></div>`;else tooltip.innerHTML=`<div><span class="key">lane</span> <span class="val">${m.lane}</span></div><div><span class="inactive">idle (no thread here)</span></div>`;}
+    tooltip.style.left=(ev.clientX-r.left+14)+'px';tooltip.style.top=(ev.clientY-r.top+14)+'px';tooltip.style.display='block';
+  } else tooltip.style.display='none';
+}
+function onClick(ev){
+  if(state.mode!=='hierarchy'||!instancedMesh)return;
+  const r=canvas.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);
+  const h=ray.intersectObject(instancedMesh);if(!h.length||h[0].instanceId===undefined)return;const m=instanceMeta[h[0].instanceId];if(!m)return;
+  if(state.view==='grid'&&m.kind==='block'){state.selectedBlock={x:m.bx,y:m.by,z:m.bz};state.view='block';tooltip.style.display='none';rebuildHier(true);}
+  else if(state.view==='block'&&m.kind==='thread'){state.selectedWarp=m.warp;state.view='warp';tooltip.style.display='none';rebuildHier(true);}
+}
+canvas.addEventListener('pointermove',onMove);canvas.addEventListener('click',onClick);canvas.addEventListener('pointerleave',()=>tooltip.style.display='none');
+addEventListener('keydown',e=>{if(state.mode==='hierarchy'&&e.key==='Escape'){if(state.view==='warp'){state.view='block';state.selectedWarp=null;rebuildHier(true);}else if(state.view==='block'){state.view='grid';state.selectedBlock=null;rebuildHier(true);}}});
+
+// ---- mode switch ----
+function switchMode(mode){
+  stopPlay();state.mode=mode;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.mode===mode));
+  document.getElementById('hier-stage').classList.toggle('hidden',mode!=='hierarchy');
+  document.getElementById('mem-stage').classList.toggle('hidden',mode!=='memory');
+  document.getElementById('occ-stage').classList.toggle('hidden',mode!=='occupancy');
+  document.getElementById('practice-stage').classList.toggle('hidden',mode!=='practice');
+  const exp=document.getElementById('export-btn'); if(exp)exp.style.opacity=mode==='hierarchy'?'1':'0.4';
+  if(mode==='practice'){ renderPractice(); syncURL(); return; }
+  renderLeftSidebar();renderRightSidebar();
+  if(mode==='hierarchy'){resize();rebuildHier();}else if(mode==='memory')renderMemory();else renderOcc();
+  syncURL();
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchMode(t.dataset.mode)));
+
+// ============================================================================
+// GUIDED TOUR
+// ============================================================================
+const TOUR=[
+  {title:'Welcome',body:'A GPU runs thousands of tiny programs called <strong>threads</strong> at the same time. To make sense of that many, CUDA organises them into a neat hierarchy. We will build it up piece by piece.',analogy:'We will use an army analogy the whole way through.',setup:()=>{switchMode('hierarchy');state.grid={x:4,y:4,z:1};state.block={x:8,y:8,z:1};state.view='grid';rebuildHier(true);}},
+  {title:'A thread',body:'The smallest unit is a single <strong>thread</strong>. It runs your code once and works on one small piece of the data. A real program has thousands of them.',analogy:'A thread is one soldier.',setup:()=>{state.grid={x:2,y:2,z:1};state.block={x:4,y:4,z:1};state.view='block';state.selectedBlock={x:0,y:0,z:0};rebuildHier(true);}},
+  {title:'A block',body:'Threads are grouped into a <strong>block</strong>. Threads in the same block can cooperate and share a small, very fast memory. Here is one block of 16 threads.',analogy:'A block is a platoon that works together.',setup:()=>{state.block={x:4,y:4,z:1};state.view='block';state.selectedBlock={x:0,y:0,z:0};rebuildHier(true);}},
+  {title:'A warp',body:'Inside a block, threads are split into <strong>warps</strong> of exactly 32. The warp is what the hardware actually runs. All 32 do the same instruction at the same instant. Press <strong>Play execution</strong> to watch.',analogy:'A warp is a squad of 32 who must all do the same move on every count.',setup:()=>{state.block={x:8,y:8,z:1};state.view='block';state.selectedBlock={x:0,y:0,z:0};rebuildHier(true);setTimeout(()=>{state.selectedWarp=0;state.view='warp';rebuildHier(true);setTimeout(startPlay,800);},700);}},
+  {title:'Divergence',body:'If threads in a warp need to do <strong>different</strong> things (an if-statement), the squad splits and runs each path one after another. That is slower, and it is called <strong>warp divergence</strong>. You just saw it in the animation.',analogy:'The squad can only do one move at a time, so splitting them wastes counts.',setup:()=>{if(state.view!=='warp'){state.view='warp';state.selectedWarp=0;state.selectedBlock={x:0,y:0,z:0};rebuildHier(true);}}},
+  {title:'The grid',body:'All the blocks together make the <strong>grid</strong>. This is everything you launch in one go. The GPU spreads the blocks across its cores in any order it likes.',analogy:'The grid is the whole army, made of many platoons.',setup:()=>{state.view='grid';state.grid={x:4,y:4,z:1};state.block={x:8,y:8,z:1};rebuildHier(true);}},
+  {title:'Memory matters',body:'Speed is mostly about memory. When a warp reads memory, it is fastest when all 32 threads read <strong>neighbouring</strong> values, so the GPU fetches them in one trip. Switch to the <strong>Memory</strong> tab to see it. Try changing the pattern to "Spread out" and watch the trips jump up.',analogy:'One trip to the warehouse for 32 items beats 32 separate trips.',setup:()=>{switchMode('memory');state.mem.pattern='coalesced';renderLeftSidebar();renderMemory();}},
+  {title:'Keeping the GPU full',body:'Finally, a GPU core can only hold so many warps. <strong>Occupancy</strong> is how full you keep it. Fuller usually means the GPU can hide waiting time by switching between warps. The <strong>Occupancy</strong> tab lets you see what limits it.',analogy:'A busy kitchen with many orders keeps cooking while one dish waits.',setup:()=>{switchMode('occupancy');renderOcc();}},
+  {title:'You are ready',body:'That is the whole picture: <strong>grid → block → warp → thread</strong>, plus memory and occupancy for speed. Switch tabs at the top and change the numbers to explore. You can replay this tour anytime with the button in the top right.',analogy:'',setup:()=>{switchMode('hierarchy');state.view='grid';rebuildHier(true);}},
+];
+function renderTour(){
+  const card=document.getElementById('tour-card');
+  if(state.tourStep<0||state.tourStep>=TOUR.length){card.classList.add('hidden');return;}
+  const t=TOUR[state.tourStep];card.classList.remove('hidden');
+  const dots=TOUR.map((_,i)=>`<div class="tour-dot ${i===state.tourStep?'active':''}"></div>`).join('');
+  card.innerHTML=`<div class="tour-step">Step ${state.tourStep+1} of ${TOUR.length}</div><h3>${t.title}</h3><p>${t.body}</p>${t.analogy?`<div class="analogy">${t.analogy}</div>`:''}
+    <div class="tour-nav"><div class="tour-dots">${dots}</div><div class="tour-actions">
+      <button class="btn" id="tour-skip">Skip</button>
+      ${state.tourStep>0?'<button class="btn" id="tour-prev">← Back</button>':''}
+      <button class="btn primary" id="tour-next">${state.tourStep===TOUR.length-1?'Finish':'Next →'}</button>
+    </div></div>`;
+  document.getElementById('tour-next').addEventListener('click',()=>gotoTour(state.tourStep+1));
+  const pv=document.getElementById('tour-prev');if(pv)pv.addEventListener('click',()=>gotoTour(state.tourStep-1));
+  document.getElementById('tour-skip').addEventListener('click',()=>gotoTour(TOUR.length));
+  try{t.setup&&t.setup();}catch(e){}
+}
+function gotoTour(i){ stopPlay(); state.tourStep=i; renderTour(); }
+function startTour(){ document.getElementById('welcome').classList.add('hidden'); gotoTour(0); }
+
+document.getElementById('start-tour').addEventListener('click',startTour);
+document.getElementById('welcome-tour').addEventListener('click',startTour);
+document.getElementById('welcome-explore').addEventListener('click',()=>{document.getElementById('welcome').classList.add('hidden');});
+
+// ============================================================================
+// SHAREABLE URL STATE
+// ============================================================================
+function syncURL(){
+  const p=new URLSearchParams();
+  p.set('mode',state.mode);
+  p.set('g',`${state.grid.x}.${state.grid.y}.${state.grid.z}`);
+  p.set('b',`${state.block.x}.${state.block.y}.${state.block.z}`);
+  if(state.mode==='memory'){p.set('mp',state.mem.pattern);p.set('ms',state.mem.stride);p.set('mo',state.mem.offset);}
+  if(state.mode==='occupancy'){p.set('og',state.occ.gpu);p.set('ot',state.occ.threadsPerBlock);p.set('or',state.occ.regsPerThread);p.set('os',state.occ.smemPerBlock);}
+  history.replaceState(null,'','#'+p.toString());
+}
+function loadFromURL(){
+  if(!location.hash||location.hash.length<2)return false;
+  try{
+    const p=new URLSearchParams(location.hash.slice(1));
+    const g=(p.get('g')||'').split('.').map(Number);if(g.length===3&&g.every(n=>n>0)){state.grid={x:g[0],y:g[1],z:g[2]};}
+    const b=(p.get('b')||'').split('.').map(Number);if(b.length===3&&b.every(n=>n>0)){state.block={x:b[0],y:b[1],z:b[2]};}
+    if(p.get('mp'))state.mem.pattern=p.get('mp');
+    if(p.get('ms'))state.mem.stride=parseInt(p.get('ms'),10)||2;
+    if(p.get('mo'))state.mem.offset=parseInt(p.get('mo'),10)||1;
+    if(p.get('og'))state.occ.gpu=p.get('og');
+    if(p.get('ot'))state.occ.threadsPerBlock=parseInt(p.get('ot'),10)||256;
+    if(p.get('or'))state.occ.regsPerThread=parseInt(p.get('or'),10)||32;
+    if(p.get('os'))state.occ.smemPerBlock=parseInt(p.get('os'),10)||0;
+    const m=p.get('mode');if(['hierarchy','memory','occupancy','practice'].includes(m))state.mode=m;
+    return true;
+  }catch(e){return false;}
+}
+function doShare(){
+  syncURL();
+  const url=location.href;
+  navigator.clipboard?.writeText(url).then(()=>flashBtn('share-btn','✓ Copied!')).catch(()=>flashBtn('share-btn','Copy failed'));
+}
+function doExport(){
+  if(state.mode!=='hierarchy'){ flashBtn('export-btn','Switch to Structure tab'); return; }
+  renderer.render(scene,camera);
+  const url=canvas.toDataURL('image/png');
+  const a=document.createElement('a');a.href=url;a.download='cuda-'+state.view+'.png';a.click();
+  flashBtn('export-btn','✓ Saved');
+}
+function flashBtn(id,txt){const b=document.getElementById(id);if(!b)return;const o=b.textContent;b.textContent=txt;setTimeout(()=>b.textContent=o,1400);}
+
+// ============================================================================
+// PRACTICE MODE (quiz)
+// ============================================================================
+function newQuestion(){
+  const rnd=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  const types=['warpsPerBlock','totalThreads','wastedLanes','whichWarp','totalWarps'];
+  const type=types[rnd(0,types.length-1)];
+  const bx=rnd(2,16),by=rnd(1,8),bz=1;
+  const gx=rnd(2,8),gy=rnd(1,4),gz=1;
+  const tpb=bx*by*bz, bpg=gx*gy*gz, wpb=Math.ceil(tpb/32);
+  let q,ans,explain;
+  if(type==='warpsPerBlock'){
+    q=`A block has dimensions (${bx}, ${by}, ${bz}). How many warps is that?`;
+    ans=wpb; explain=`Threads per block = ${bx}×${by}×${bz} = ${tpb}. Warps = ceil(${tpb} / 32) = ${wpb}.`;
+  } else if(type==='totalThreads'){
+    q=`Grid (${gx}, ${gy}, ${gz}) blocks, each block (${bx}, ${by}, ${bz}) threads. Total threads launched?`;
+    ans=tpb*bpg; explain=`Threads/block = ${tpb}. Blocks = ${bpg}. Total = ${tpb} × ${bpg} = ${tpb*bpg}.`;
+  } else if(type==='wastedLanes'){
+    q=`A block has ${tpb} threads. How many lanes are idle in its last warp?`;
+    const rem=tpb%32, waste=rem===0?0:32-rem;
+    ans=waste; explain=`${tpb} mod 32 = ${rem}. ${rem===0?'It divides evenly, so 0 idle lanes.':`The last warp uses ${rem} lanes, so 32 − ${rem} = ${waste} are idle.`}`;
+  } else if(type==='whichWarp'){
+    const tid=rnd(0,tpb-1);
+    q=`A thread has linear id ${tid} inside its block. Which warp does it belong to?`;
+    ans=Math.floor(tid/32); explain=`Warp = floor(${tid} / 32) = ${Math.floor(tid/32)}. (Lane would be ${tid%32}.)`;
+  } else {
+    q=`Grid (${gx}, ${gy}, ${gz}) blocks, each block (${bx}, ${by}, ${bz}). Total warps across the whole grid?`;
+    ans=wpb*bpg; explain=`Warps/block = ceil(${tpb}/32) = ${wpb}. Blocks = ${bpg}. Total warps = ${wpb} × ${bpg} = ${wpb*bpg}.`;
+  }
+  state.practice.q={q,ans,explain,answered:false};
+  renderPractice();
+}
+function answerQuestion(val){
+  const pr=state.practice; if(!pr.q||pr.q.answered)return;
+  pr.q.answered=true; pr.answered++;
+  const correct=parseInt(val,10)===pr.q.ans;
+  if(correct){pr.score++;pr.streak++;}else{pr.streak=0;}
+  pr.q.correct=correct; pr.q.given=val;
+  renderPractice();
+}
+function renderPractice(){
+  const stage=document.getElementById('practice-stage');
+  const pr=state.practice;
+  if(!pr.q){ stage.innerHTML=`<h1>Practice</h1><div class="subtitle">Test whether the concepts stuck. Quick questions on threads, warps, blocks, and lanes.</div><button class="btn primary" id="start-quiz" style="padding:12px 24px;">Start practising</button>`; document.getElementById('start-quiz').addEventListener('click',newQuestion); renderPracticeSidebar(); return; }
+  const q=pr.q;
+  let feedback='';
+  if(q.answered){
+    feedback=`<div class="note" style="border-left-color:${q.correct?'#4affb0':'#ff8a5a'};margin-top:18px;">
+      <strong style="color:${q.correct?'#4affb0':'#ff8a5a'};">${q.correct?'Correct.':`Not quite. The answer is ${q.ans}.`}</strong><br>${q.explain}</div>
+      <button class="btn primary" id="next-q" style="margin-top:16px;padding:12px 24px;">Next question →</button>`;
+  }
+  stage.innerHTML=`<h1>Practice</h1>
+    <div style="background:#0f1016;border:1px solid #20222c;border-radius:10px;padding:24px;margin-top:8px;">
+      <div style="font-size:11px;color:#6a6d7a;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Question ${pr.answered + (q.answered?0:1)}</div>
+      <div style="font-size:17px;color:#fff;line-height:1.5;margin-bottom:20px;">${q.q}</div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <input id="quiz-input" type="number" placeholder="Your answer" style="max-width:180px;" ${q.answered?'disabled':''} value="${q.answered?q.given:''}"/>
+        ${q.answered?'':'<button class="btn primary" id="submit-q" style="padding:9px 20px;">Check</button>'}
+      </div>
+      ${feedback}
+    </div>`;
+  renderPracticeSidebar();
+  if(!q.answered){
+    const inp=document.getElementById('quiz-input'); inp.focus();
+    const submit=()=>{ if(inp.value!=='')answerQuestion(inp.value); };
+    document.getElementById('submit-q').addEventListener('click',submit);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter')submit();});
+  } else {
+    document.getElementById('next-q').addEventListener('click',newQuestion);
+  }
+}
+function renderPracticeSidebar(){
+  const el=document.getElementById('left-sidebar');
+  const pr=state.practice;
+  const pct=pr.answered>0?Math.round(pr.score/pr.answered*100):0;
+  el.innerHTML=`<h1>Practice</h1><div class="subtitle">Quick checks to see if the ideas stuck.</div>
+    <h2>Your score</h2>
+    <div class="stat"><span class="label">Correct</span><span class="value good">${pr.score}</span></div>
+    <div class="stat"><span class="label">Answered</span><span class="value">${pr.answered}</span></div>
+    <div class="stat"><span class="label">Accuracy</span><span class="value ${pct>=70?'good':pct>=40?'warn':''}">${pct}%</span></div>
+    <div class="stat"><span class="label">Current streak</span><span class="value ${pr.streak>=3?'good':''}">${pr.streak}🔥</span></div>
+    <div class="note" style="margin-top:18px;">Stuck on one? Open the <strong>Structure</strong> tab, build the same block, and the answer becomes obvious. That's the point.</div>
+    <button class="btn" id="reset-score" style="margin-top:14px;">Reset score</button>`;
+  const rs=document.getElementById('reset-score');
+  if(rs)rs.addEventListener('click',()=>{state.practice.score=0;state.practice.answered=0;state.practice.streak=0;renderPracticeSidebar();});
+}
+
+// ---- render loop ----
+function animate(now){
+  requestAnimationFrame(animate);
+  if(camTween){
+    const t=Math.min(1,(now-camTween.start)/camTween.dur);
+    const e=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; // easeInOutQuad
+    camera.position.lerpVectors(camTween.fromPos,camTween.toPos,e);
+    controls.target.lerpVectors(camTween.fromTar,camTween.toTar,e);
+    if(t>=1)camTween=null;
+  }
+  if(state.mode==='hierarchy'){controls.update();renderer.render(scene,camera);}
+}
+requestAnimationFrame(animate);
+document.getElementById('share-btn').addEventListener('click',doShare);
+document.getElementById('export-btn').addEventListener('click',doExport);
+// Sync URL when memory/occupancy inputs change
+['change','input'].forEach(ev=>document.addEventListener(ev,e=>{ if(['mem-pattern','mem-stride','mem-offset','occ-gpu','occ-tpb','occ-regs','occ-smem'].includes(e.target.id)) syncURL(); }));
+// Load shared state from URL if present, otherwise default
+const hadURL=loadFromURL();
+switchMode(state.mode);
+if(hadURL){ document.getElementById('welcome').classList.add('hidden'); }
+setTimeout(resize,60);
+</script>
+</body>
+</html>
